@@ -23,7 +23,7 @@ CandidateInfoTuple = namedtuple(
 
 # to cache on disk
 @functools.lru_cache(1)
-def getCandidateInfoList(requireOnDisk_bool=True):
+def getCandidateInfoList(requireOnDisk_bool=True, data_dir="data/"):
     """
     Return a cleaned, ordered and organized form of the human-annotated files by combining information present in
     candidates and annotations files. If requireOnDisk_bool = True, consider elements of the human-annotated files
@@ -34,14 +34,14 @@ def getCandidateInfoList(requireOnDisk_bool=True):
 
     # construct a set with only the series_uids present on disk.
     # allows to use data, even if all subsets weren't downloaded
-    mhd_list = glob.glob('data/subset*/*.mhd')
+    mhd_list = glob.glob(data_dir + 'subset*/*.mhd')
     presentOnDisk_set = {os.path.split(p)[-1][:-4] for p in mhd_list}
 
     # each element of diameter_dict corresponds to a unique ct scan
     # with a list with the centers and diameters for each nodule in that ct scan
     # 'series_uid': [(center_nod1, diam_nod1), (center_nod2, diam_nod2), ...]
     diameter_dict = {}
-    with open('data/annotations.csv', "r") as f:
+    with open(data_dir + 'annotations.csv', "r") as f:
         for row in list(csv.reader(f))[1:]:
             series_uid = row[0]
 
@@ -55,7 +55,7 @@ def getCandidateInfoList(requireOnDisk_bool=True):
             )
 
     candidateInfo_list = []  # List of CandidateInfoTuple objects
-    with open('data/candidates.csv', "r") as f:
+    with open(data_dir + 'candidates.csv', "r") as f:
         for row in list(csv.reader(f))[1:]:
             series_uid = row[0]
 
@@ -95,8 +95,10 @@ def getCandidateInfoList(requireOnDisk_bool=True):
 
 # Ct class whose elements will be ct scans as numpy arrays
 class Ct:
-    def __init__(self, series_uid):
-        mhd_path = glob.glob('data/subset*/{}.mhd'.format(series_uid))[0]
+    def __init__(self, series_uid, data_dir="data/"):
+
+        self.data_dir = data_dir
+        mhd_path = glob.glob(self.data_dir + 'subset*/{}.mhd'.format(series_uid))[0]
 
         # black-box method to read from the ct format (MetaIO) to numpy array
         ct_mhd = sitk.ReadImage(mhd_path)  # implicitly consumes the .raw file in addition to the passed-in .mhd file
@@ -160,20 +162,20 @@ class Ct:
 
 # to cache on disk 1 ct scan at a time
 @functools.lru_cache(1, typed=True)
-def getCt(series_uid):
+def getCt(series_uid, data_dir="data/"):
     """
     Initialize an instance of the Ct class
     """
-    return Ct(series_uid)
+    return Ct(series_uid, data_dir=data_dir)
 
 
 # to cache on disk differently TODO: explain this
 #@raw_cache.memoize(typed=True)
-def getCtRawCandidate(series_uid, center_xyz, width_irc):
+def getCtRawCandidate(series_uid, center_xyz, width_irc, data_dir="data/"):
     """
     Initialize an instance of the Ct class and calls getRawCandidate
     """
-    ct = getCt(series_uid)
+    ct = getCt(series_uid, data_dir=data_dir)
     ct_chunk, center_irc = ct.getRawCandidate(center_xyz, width_irc)
     return ct_chunk, center_irc
 
@@ -183,8 +185,9 @@ class LunaDataset(Dataset):
                  val_stride=0,
                  isValSet_bool=None,
                  series_uid=None,
-                 ):
-        self.candidateInfo_list = copy.copy(getCandidateInfoList())
+                 data_dir="data/"):
+        self.data_dir = data_dir
+        self.candidateInfo_list = copy.copy(getCandidateInfoList(data_dir=self.data_dir))
 
         if series_uid:
             self.candidateInfo_list = [
@@ -217,6 +220,7 @@ class LunaDataset(Dataset):
             candidateInfo_tup.series_uid,
             candidateInfo_tup.center_xyz,
             width_irc,
+            data_dir=self.data_dir,
         )
 
         candidate_t = torch.from_numpy(candidate_a)

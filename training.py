@@ -51,6 +51,11 @@ class LunaTrainingApp:
                             default=1,
                             type=int,
                             )
+        parser.add_argument('--data_dir',
+                            help='Directory of data',
+                            default="data/",
+                            type=str,
+                            )
         # TODO: wtf is this Tensorboard thing?
         parser.add_argument('--tb_prefix',
                             default='p2ch11',
@@ -73,6 +78,7 @@ class LunaTrainingApp:
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         self.num_devices = torch.cuda.device_count()
+        self.data_dir = self.args.data_dir
         # extend batch_size if multiple devices present
         self.batch_size = self.args.batch_size
         if self.use_cuda:
@@ -108,6 +114,7 @@ class LunaTrainingApp:
         dataset = LunaDataset(
             val_stride=10,
             isValSet_bool=isValSet_bool,
+            data_dir=self.data_dir,
         )
 
         dataloader = DataLoader(
