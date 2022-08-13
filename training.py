@@ -56,21 +56,15 @@ class LunaTrainingApp:
                             default="data/",
                             type=str,
                             )
-        # TODO: wtf is this Tensorboard thing?
         parser.add_argument('--tb_prefix',
-                            default='p2ch11',
-                            help="Data prefix to use for Tensorboard run. Defaults to chapter.",
-                            )
-        parser.add_argument('comment',
-                            help="Comment suffix for Tensorboard run.",
-                            nargs='?',
-                            default='dwlpt',
+                            default='run0',
+                            help="Data prefix to use for Tensorboard run",
                             )
 
         self.args = parser.parse_args(sys_argv)  # store all given arguments
         self.time_str = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')  # timestamp to identify training runs
 
-        # TODO: wtf are these?
+        # TODO: used later for tensorboard
         self.trn_writer = None
         self.val_writer = None
         self.totalTrainingSamples_count = 0
@@ -78,32 +72,48 @@ class LunaTrainingApp:
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         self.num_devices = torch.cuda.device_count()
-        self.data_dir = self.args.data_dir
         # extend batch_size if multiple devices present
         self.batch_size = self.args.batch_size
         if self.use_cuda:
             self.batch_size *= self.num_devices
 
-        self.model = self.initModel()
-        self.optimizer = self.initOptimizer()
+        # initialize model and optimizer
+        self.model = LunaModel().to(self.device)
+        self.optimizer = SGD(self.model.parameters(), lr=0.001, momentum=0.99)
 
-    def initModel(self):
+    def main(self):
         """
-        Initialize model and send it to the corresponding device
-        :return: model
+        Here is where the magic happens. It trains the model for all epochs, store the training and
+        validation metrics, and display the results.
         """
-        model = LunaModel()
-        if self.use_cuda:
-            log.info("Using CUDA; {} devices.".format(self.num_devices))
-            if self.num_devices > 1:  # detect multiple GPUs
-                model = nn.DataParallel(model)
-            model = model.to(self.device)
-        return model
+        log.info("Starting {}, {}".format(type(self).__name__, self.args))
 
-    # TODO: add learning rate and momentum as command-line arguments?
-    def initOptimizer(self):
-        return SGD(self.model.parameters(), lr=0.001, momentum=0.99)
-        # return Adam(self.model.parameters())
+        trn_dl = self.initDataLoader(isValSet_bool=False)
+        val_dl = self.initDataLoader(isValSet_bool=True)
+
+        for epoch_ndx in range(1, self.args.epochs + 1):
+            log.info("Epoch {} of {}, {}/{} batches (trn/val) of size {}".format(
+                epoch_ndx,
+                self.args.epochs,
+                len(trn_dl),
+                len(val_dl),
+                self.batch_size,
+            ))
+
+            # train and returns training metrics for a single epoch
+            trnMetrics_t = self.doTraining(epoch_ndx, trn_dl)
+            # display training metrics
+            self.logMetrics(epoch_ndx, 'trn', trnMetrics_t)
+
+            # return validation metrics for a single epoch
+            valMetrics_t = self.doValidation(epoch_ndx, val_dl)
+            # display validation metrics
+            self.logMetrics(epoch_ndx, 'val', valMetrics_t)
+
+        #  TODO: wtf is this?
+        if hasattr(self, 'trn_writer'):
+            self.trn_writer.close()
+            self.val_writer.close()
 
     def initDataLoader(self, isValSet_bool=False):
         """
@@ -114,7 +124,7 @@ class LunaTrainingApp:
         dataset = LunaDataset(
             val_stride=10,
             isValSet_bool=isValSet_bool,
-            data_dir=self.data_dir,
+            data_dir=self.args.data_dir,
         )
 
         dataloader = DataLoader(
@@ -126,49 +136,12 @@ class LunaTrainingApp:
 
         return dataloader
 
-    # TODO: Wtf is this?
+    # create folders where tensorboard writers will be stored
     def initTensorboardWriters(self):
         if self.trn_writer is None:
             log_dir = os.path.join('runs', self.args.tb_prefix, self.time_str)
-
-            self.trn_writer = SummaryWriter(
-                log_dir=log_dir + '-trn_cls-' + self.args.comment)
-            self.val_writer = SummaryWriter(
-                log_dir=log_dir + '-val_cls-' + self.args.comment)
-
-    def main(self):
-        """
-        Here is where the magic happens. It trains the model for all epochs, store the training and
-        validation metrics, and display the results.
-        """
-        log.info("Starting {}, {}".format(type(self).__name__, self.args))
-
-        train_dl = self.initDataLoader(isValSet_bool=False)
-        val_dl = self.initDataLoader(isValSet_bool=True)
-
-        for epoch_ndx in range(1, self.args.epochs + 1):
-            log.info("Epoch {} of {}, {}/{} batches of size {}".format(
-                epoch_ndx,
-                self.args.epochs,
-                len(train_dl),
-                len(val_dl),
-                self.batch_size,
-            ))
-
-            # train and returns training metrics for a single epoch
-            trnMetrics_t = self.doTraining(epoch_ndx, train_dl)
-            # TODO: store training metrics
-            self.logMetrics(epoch_ndx, 'trn', trnMetrics_t)
-
-            # return validation metrics for a single epoch
-            valMetrics_t = self.doValidation(epoch_ndx, val_dl)
-            # TODO: store validation metrics
-            self.logMetrics(epoch_ndx, 'val', valMetrics_t)
-
-        #  TODO: wtf is this?
-        if hasattr(self, 'trn_writer'):
-            self.trn_writer.close()
-            self.val_writer.close()
+            self.trn_writer = SummaryWriter(log_dir=log_dir + '-trn')
+            self.val_writer = SummaryWriter(log_dir=log_dir + '-val')
 
     def doTraining(self, epoch_ndx, train_dl):
         """

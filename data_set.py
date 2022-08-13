@@ -3,16 +3,24 @@ import csv
 import functools
 import glob
 import os
+import random
+
 from collections import namedtuple
+
 import SimpleITK as sitk  # parser to go from MetaIO format to NumPy arrays
 import numpy as np
+
 import torch
 import torch.cuda
 from torch.utils.data import Dataset
+
 from util.disk import getCache
 from util.util import XyzTuple, xyz2irc
+from util.logconf import logging
 
-raw_cache = getCache('part2ch10_raw')
+log = logging.getLogger(__name__)
+
+raw_cache = getCache('cache_data_raw')
 
 # cleaned and organized way of storing information for each candidate
 CandidateInfoTuple = namedtuple(
@@ -169,8 +177,8 @@ def getCt(series_uid, data_dir="data/"):
     return Ct(series_uid, data_dir=data_dir)
 
 
-# to cache on disk differently TODO: explain this
-#@raw_cache.memoize(typed=True)
+# to cache on disk differently, if this cache is commented, the caching does not happend at all! TODO: explain this
+@raw_cache.memoize(typed=True)
 def getCtRawCandidate(series_uid, center_xyz, width_irc, data_dir="data/"):
     """
     Initialize an instance of the Ct class and calls getRawCandidate
@@ -185,7 +193,9 @@ class LunaDataset(Dataset):
                  val_stride=0,
                  isValSet_bool=None,
                  series_uid=None,
+                 sortby_str="random",
                  data_dir="data/"):
+
         self.data_dir = data_dir
         self.candidateInfo_list = copy.copy(getCandidateInfoList(data_dir=self.data_dir))
 
@@ -202,7 +212,21 @@ class LunaDataset(Dataset):
             del self.candidateInfo_list[::val_stride]
             assert self.candidateInfo_list
 
-        print("{} {} samples".format(len(self.candidateInfo_list), "validation" if isValSet_bool else "training"))
+        # sort the dataset depending on argument sortby_str
+        if sortby_str == 'random':
+            random.shuffle(self.candidateInfo_list)
+        elif sortby_str == 'series_uid':
+            self.candidateInfo_list.sort(key=lambda x: (x.series_uid, x.center_xyz))
+        elif sortby_str == 'label_and_size':
+            pass
+        else:
+            raise Exception("Unknown sort: " + repr(sortby_str))
+
+        log.info("{!r}: {} {} samples".format(
+            self,
+            len(self.candidateInfo_list),
+            "validation" if isValSet_bool else "training",
+        ))
 
     def __len__(self):
         return len(self.candidateInfo_list)

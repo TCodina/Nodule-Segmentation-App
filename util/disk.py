@@ -45,7 +45,6 @@ class GzipDisk(Disk):
 
         return super(GzipDisk, self).store(value, read)
 
-
     def fetch(self, mode, filename, value, read):
         """
         Override from base class diskcache.Disk.
@@ -82,7 +81,7 @@ class GzipDisk(Disk):
 
 
 def getCache(scope_str):
-    return FanoutCache('data-unversioned/cache/' + scope_str,
+    return FanoutCache(scope_str,
                        disk=GzipDisk,
                        shards=64,
                        timeout=1,
