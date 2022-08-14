@@ -8,10 +8,9 @@ import time
 import numpy as np
 
 from util.logconf import logging
-log = logging.getLogger(__name__)
-# log.setLevel(logging.WARN)
-# log.setLevel(logging.INFO)
-log.setLevel(logging.DEBUG)
+
+log = logging.getLogger(__name__)  # Instance of logging for this file
+log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed
 
 IrcTuple = collections.namedtuple('IrcTuple', ['index', 'row', 'col'])
 XyzTuple = collections.namedtuple('XyzTuple', ['x', 'y', 'z'])

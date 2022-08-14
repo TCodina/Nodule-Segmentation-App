@@ -2,24 +2,23 @@ import argparse  # to accept command-line arguments
 import datetime
 import os
 import sys
+
 import numpy as np
-from torch.utils.tensorboard import SummaryWriter  # ??
+from torch.utils.tensorboard import SummaryWriter  # to write metrics into tensorboard
 import torch
 import torch.nn as nn
 from torch.optim import SGD, Adam
 from torch.utils.data import DataLoader
 
-from util.util import enumerateWithEstimate  # fancy enumerate()
+from util.util import enumerateWithEstimate  # fancy enumerate() which also estimate remaining computation time
+from util.logconf import logging  # display messages in a formatted way
 from data_set import LunaDataset
-from util.logconf import logging
 from model import LunaModel
 
-log = logging.getLogger(__name__)
-# log.setLevel(logging.WARN)
-log.setLevel(logging.INFO)
-log.setLevel(logging.DEBUG)
+log = logging.getLogger(__name__)  # Instance of logging for this file
+log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed
 
-# Used for computeBatchLoss and logMetrics to index into metrics_t/metrics_a
+# Used for computeBatchLoss and logMetrics to indexing metrics (label, predictions and loss)
 METRICS_LABEL_NDX = 0
 METRICS_PRED_NDX = 1
 METRICS_LOSS_NDX = 2
@@ -102,15 +101,15 @@ class LunaTrainingApp:
 
             # train and returns training metrics for a single epoch
             trnMetrics_t = self.doTraining(epoch_ndx, trn_dl)
-            # display training metrics
+            # display training metrics and TODO: something with tb
             self.logMetrics(epoch_ndx, 'trn', trnMetrics_t)
 
             # return validation metrics for a single epoch
             valMetrics_t = self.doValidation(epoch_ndx, val_dl)
-            # display validation metrics
+            # display validation metrics TODO: something with tb
             self.logMetrics(epoch_ndx, 'val', valMetrics_t)
 
-        #  TODO: wtf is this?
+        #  TODO: close writers after training and validating for all epochs (WHY HASATTR? SELF.TRN_WRITER IS THE SAME?)
         if hasattr(self, 'trn_writer'):
             self.trn_writer.close()
             self.val_writer.close()
@@ -136,7 +135,7 @@ class LunaTrainingApp:
 
         return dataloader
 
-    # create folders where tensorboard writers will be stored
+    # create writers for the first time
     def initTensorboardWriters(self):
         if self.trn_writer is None:
             log_dir = os.path.join('runs', self.args.tb_prefix, self.time_str)

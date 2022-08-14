@@ -6,19 +6,19 @@ import os
 import random
 
 from collections import namedtuple
-
 import SimpleITK as sitk  # parser to go from MetaIO format to NumPy arrays
-import numpy as np
 
+import numpy as np
 import torch
 import torch.cuda
 from torch.utils.data import Dataset
 
-from util.disk import getCache
+from util.disk import getCache  # local function for caching
 from util.util import XyzTuple, xyz2irc
 from util.logconf import logging
 
-log = logging.getLogger(__name__)
+log = logging.getLogger(__name__)  # Instance of logging for this file
+log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed
 
 raw_cache = getCache('cache_data_raw')
 

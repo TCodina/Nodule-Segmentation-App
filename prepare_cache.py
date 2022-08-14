@@ -1,24 +1,14 @@
 import argparse
 import sys
 
-import numpy as np
-
-import torch.nn as nn
-from torch.autograd import Variable
-from torch.optim import SGD
 from torch.utils.data import DataLoader
 
 from util.util import enumerateWithEstimate
 from data_set import LunaDataset
 from util.logconf import logging
-from model import LunaModel
 
-log = logging.getLogger(__name__)
-# log.setLevel(logging.WARN)
-log.setLevel(logging.INFO)
-
-
-# log.setLevel(logging.DEBUG)
+log = logging.getLogger(__name__)  # Instance of logging for this file
+log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed
 
 
 class LunaPrepCacheApp:
