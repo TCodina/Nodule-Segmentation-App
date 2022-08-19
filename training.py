@@ -4,10 +4,10 @@ import os
 import sys
 
 import numpy as np
-from torch.utils.tensorboard import SummaryWriter  # to write metrics into tensorboard
+from torch.utils.tensorboard import SummaryWriter  # to write metrics data in a format that TensorBoard will consume
 import torch
 import torch.nn as nn
-from torch.optim import SGD, Adam
+from torch.optim import SGD
 from torch.utils.data import DataLoader
 
 from util.util import enumerateWithEstimate  # fancy enumerate() which also estimate remaining computation time
@@ -50,6 +50,41 @@ class LunaTrainingApp:
                             default=1,
                             type=int,
                             )
+        parser.add_argument('--balanced',
+                            help="Balance the training data to half positive, half negative.",
+                            action='store_true',
+                            default=False,
+                            )
+        parser.add_argument('--augmented',
+                            help="Augment the training data.",
+                            action='store_true',
+                            default=False,
+                            )
+        parser.add_argument('--augment-flip',
+                            help="Augment the training data by randomly flipping the data left-right, up-down, and front-back.",
+                            action='store_true',
+                            default=False,
+                            )
+        parser.add_argument('--augment-offset',
+                            help="Augment the training data by randomly offsetting the data slightly along the X and Y axes.",
+                            action='store_true',
+                            default=False,
+                            )
+        parser.add_argument('--augment-scale',
+                            help="Augment the training data by randomly increasing or decreasing the size of the candidate.",
+                            action='store_true',
+                            default=False,
+                            )
+        parser.add_argument('--augment-rotate',
+                            help="Augment the training data by randomly rotating the data around the head-foot axis.",
+                            action='store_true',
+                            default=False,
+                            )
+        parser.add_argument('--augment-noise',
+                            help="Augment the training data by randomly adding noise to the data.",
+                            action='store_true',
+                            default=False,
+                            )
         parser.add_argument('--data_dir',
                             help='Directory of data',
                             default="data/",
@@ -61,12 +96,25 @@ class LunaTrainingApp:
                             )
 
         self.args = parser.parse_args(sys_argv)  # store all given arguments
-        self.time_str = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')  # timestamp to identify training runs
+        self.time_str = datetime.datetime.now().strftime(
+            '%Y-%m-%d_%H.%M.%S')  # timestamp to identify training runs (TODO: Where do we use this?)
 
-        # TODO: used later for tensorboard
+        # initialize writers to be used later for writing metrics data and tensorboard
         self.trn_writer = None
         self.val_writer = None
         self.totalTrainingSamples_count = 0
+
+        self.augmentation_dict = {}
+        if self.args.augmented or self.args.augment_flip:
+            self.augmentation_dict['flip'] = True
+        if self.args.augmented or self.args.augment_offset:
+            self.augmentation_dict['offset'] = 0.1
+        if self.args.augmented or self.args.augment_scale:
+            self.augmentation_dict['scale'] = 0.2
+        if self.args.augmented or self.args.augment_rotate:
+            self.augmentation_dict['rotate'] = True
+        if self.args.augmented or self.args.augment_noise:
+            self.augmentation_dict['noise'] = 25.0
 
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
@@ -87,7 +135,10 @@ class LunaTrainingApp:
         """
         log.info("Starting {}, {}".format(type(self).__name__, self.args))
 
-        trn_dl = self.initDataLoader(isValSet_bool=False)
+        trn_dl = self.initDataLoader(isValSet_bool=False,
+                                     ratio_int=int(self.args.balanced),
+                                     augmentation_dict=self.augmentation_dict
+                                     )
         val_dl = self.initDataLoader(isValSet_bool=True)
 
         for epoch_ndx in range(1, self.args.epochs + 1):
@@ -109,20 +160,27 @@ class LunaTrainingApp:
             # display validation metrics TODO: something with tb
             self.logMetrics(epoch_ndx, 'val', valMetrics_t)
 
-        #  TODO: close writers after training and validating for all epochs (WHY HASATTR? SELF.TRN_WRITER IS THE SAME?)
-        if hasattr(self, 'trn_writer'):
-            self.trn_writer.close()
-            self.val_writer.close()
+        #  TODO: close writers after training and validating for all epochs
+        self.trn_writer.close()
+        self.val_writer.close()
 
-    def initDataLoader(self, isValSet_bool=False):
+    def initDataLoader(self,
+                       isValSet_bool=False,
+                       ratio_int=0,
+                       augmentation_dict=None
+                       ):
         """
         Initialize dataloader for training or validation set
+        :param augmentation_dict:
+        :param ratio_int:
         :param isValSet_bool: determines whether to use training or validation set
         :return: dataloader
         """
         dataset = LunaDataset(
             val_stride=10,
             isValSet_bool=isValSet_bool,
+            ratio_int=ratio_int,
+            augmentation_dict=augmentation_dict,
             data_dir=self.args.data_dir,
         )
 
@@ -134,13 +192,6 @@ class LunaTrainingApp:
         )
 
         return dataloader
-
-    # create writers for the first time
-    def initTensorboardWriters(self):
-        if self.trn_writer is None:
-            log_dir = os.path.join('runs', self.args.tb_prefix, self.time_str)
-            self.trn_writer = SummaryWriter(log_dir=log_dir + '-trn')
-            self.val_writer = SummaryWriter(log_dir=log_dir + '-val')
 
     def doTraining(self, epoch_ndx, train_dl):
         """
@@ -155,6 +206,7 @@ class LunaTrainingApp:
         :return: training metric
         """
         self.model.train()
+        train_dl.dataset.shuffleSamples()
         trnMetrics_g = torch.zeros(
             METRICS_SIZE,
             len(train_dl.dataset),
@@ -179,13 +231,6 @@ class LunaTrainingApp:
 
             loss_var.backward()
             self.optimizer.step()
-
-            # # This is for adding the model graph to TensorBoard.
-            # if epoch_ndx == 1 and batch_ndx == 0:
-            #     with torch.no_grad():
-            #         model = LunaModel()
-            #         self.trn_writer.add_graph(model, batch_tup[0], verbose=True)
-            #         self.trn_writer.close()
 
         self.totalTrainingSamples_count += len(train_dl.dataset)
 
@@ -250,6 +295,13 @@ class LunaTrainingApp:
 
         return loss_g.mean()
 
+    # create writers for the first time (used inside logMetrics) inside runs/ subdirectories
+    def initTensorboardWriters(self):
+        if self.trn_writer is None:
+            log_dir = os.path.join('runs', self.args.tb_prefix, self.time_str)
+            self.trn_writer = SummaryWriter(log_dir=log_dir + '-trn')  # TODO: what is this object?
+            self.val_writer = SummaryWriter(log_dir=log_dir + '-val')
+
     def logMetrics(
             self,
             epoch_ndx,
@@ -260,16 +312,18 @@ class LunaTrainingApp:
         """
         Display full and per-class statistics (loss and correct percentage).
         :param epoch_ndx: just to display the current epoch
-        :param mode_str: train or validation
+        :param mode_str: train or val    # create writers for the first time (used inside logMetrics)
+    def initTensorboardWriters(self):
+        if self.trn_writer is None:
+            log_dir = os.path.join('runs', self.args.tb_prefix, self.time_str)
+            self.trn_writer = SummaryWriter(log_dir=log_dir + '-trn')
+            self.val_writer = SummaryWriter(log_dir=log_dir + '-val')idation
         :param metrics_t:
         :param classificationThreshold:
         :return:
         """
-        self.initTensorboardWriters()
-        log.info("E{} {}".format(
-            epoch_ndx,
-            type(self).__name__,
-        ))
+
+        log.info("E{} {}".format(epoch_ndx, type(self).__name__))
 
         # array of True (non-nodule) and False (nodule) for labels and predictions.
         # to be used as indices to pick metrics with negative values
@@ -283,29 +337,41 @@ class LunaTrainingApp:
         neg_count = int(negLabel_mask.sum())
         pos_count = int(posLabel_mask.sum())
 
-        neg_correct = int((negLabel_mask & negPred_mask).sum())
-        pos_correct = int((posLabel_mask & posPred_mask).sum())
+        trueNeg_count = int((negLabel_mask & negPred_mask).sum())
+        truePos_count = int((posLabel_mask & posPred_mask).sum())
 
-        # store metrics in dictionary
+        falsePos_count = neg_count - trueNeg_count
+        falseNeg_count = pos_count - truePos_count
+
+        # some metrics
+        precision = truePos_count / np.float32(truePos_count + falsePos_count)
+        recall = truePos_count / np.float32(truePos_count + falseNeg_count)
+        f1_score = 2 * (precision * recall) / (precision + recall)
+
+        # store metric scalars in dictionary (the "/" is to divide into subdirectories in tensorboard later)
         metrics_dict = {'loss/all': metrics_t[METRICS_LOSS_NDX].mean(),
                         'loss/neg': metrics_t[METRICS_LOSS_NDX, negLabel_mask].mean(),  # mask picks only negatives
                         'loss/pos': metrics_t[METRICS_LOSS_NDX, posLabel_mask].mean(),  # picks only positive
-                        'correct/all': (pos_correct + neg_correct) / np.float32(metrics_t.shape[1]) * 100,
-                        'correct/neg': neg_correct / np.float32(neg_count) * 100,
-                        'correct/pos': pos_correct / np.float32(pos_count) * 100}
+                        'correct/all': (truePos_count + trueNeg_count) / np.float32(metrics_t.shape[1]) * 100,
+                        'correct/neg': trueNeg_count / np.float32(neg_count) * 100,
+                        'correct/pos': truePos_count / np.float32(pos_count) * 100,
+                        'pr/precision': precision,
+                        'pr/recall': recall,
+                        'pr/f1_score': f1_score}
 
         # display metrics
         # log for all
-        log.info(("E{} {:8} {loss/all:.4f} loss, {correct/all:-5.1f}% correct, "
-                  ).format(epoch_ndx,
-                           mode_str,
-                           **metrics_dict  # use dictionary keys
-                           ))
+        log.info(("E{} {:8} {loss/all:.4f} loss, "
+                  + "{correct/all:-5.1f}% correct, "
+                  + "{pr/precision:.4f} precision, "
+                  + "{pr/recall:.4f} recall, "
+                  + "{pr/f1_score:.4f} f1 score"
+                  ).format(epoch_ndx, mode_str, **metrics_dict))
         # log for negative class
         log.info(("E{} {:8} {loss/neg:.4f} loss, {correct/neg:-5.1f}% correct ({neg_correct:} of {neg_count:})"
                   ).format(epoch_ndx,
                            mode_str + '_neg',
-                           neg_correct=neg_correct,
+                           neg_correct=trueNeg_count,
                            neg_count=neg_count,
                            **metrics_dict
                            ))
@@ -313,16 +379,21 @@ class LunaTrainingApp:
         log.info(("E{} {:8} {loss/pos:.4f} loss, {correct/pos:-5.1f}% correct ({pos_correct:} of {pos_count:})"
                   ).format(epoch_ndx,
                            mode_str + '_pos',
-                           pos_correct=pos_correct,
+                           pos_correct=truePos_count,
                            pos_count=pos_count,
                            **metrics_dict
                            ))
 
+        # all what follows is for tensorboard
+        self.initTensorboardWriters()  # initialize writers only if they are not initialized yet
+
         writer = getattr(self, mode_str + '_writer')
 
+        # add scalar metrics
         for key, value in metrics_dict.items():
-            writer.add_scalar(key, value, self.totalTrainingSamples_count)
+            writer.add_scalar(key, value, self.totalTrainingSamples_count)  # (name_of_graph, Y-axis, X-axis)
 
+        # add Precision-Recall (pr) curves
         writer.add_pr_curve(
             'pr',
             metrics_t[METRICS_LABEL_NDX],
@@ -331,7 +402,6 @@ class LunaTrainingApp:
         )
 
         bins = [x / 50.0 for x in range(51)]
-
         negHist_mask = negLabel_mask & (metrics_t[METRICS_PRED_NDX] > 0.01)
         posHist_mask = posLabel_mask & (metrics_t[METRICS_PRED_NDX] < 0.99)
 
