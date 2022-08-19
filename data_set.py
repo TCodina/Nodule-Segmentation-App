@@ -104,7 +104,8 @@ def getCandidateInfoList(requireOnDisk_bool=True, data_dir="data/"):
 class Ct:
     def __init__(self, series_uid, data_dir="data/"):
 
-        mhd_path = glob.glob(data_dir + 'subset*/{}.mhd'.format(series_uid))[0]
+        self.data_dir = data_dir
+        mhd_path = glob.glob(self.data_dir + 'subset*/{}.mhd'.format(series_uid))[0]
 
         # black-box method to read from the ct format (MetaIO) to numpy array
         ct_mhd = sitk.ReadImage(mhd_path)  # implicitly consumes the .raw file in addition to the passed-in .mhd file
@@ -383,13 +384,14 @@ class LunaDataset(Dataset):
                 candidateInfo_tup.series_uid,
                 candidateInfo_tup.center_xyz,
                 width_irc,
+                data_dir=self.data_dir
             )
 
             candidate_t = torch.from_numpy(candidate_a).to(torch.float32)
             candidate_t = candidate_t.unsqueeze(0)  # add channel dimension
 
         else:
-            ct = getCt(candidateInfo_tup.series_uid)
+            ct = getCt(candidateInfo_tup.series_uid, data_dir=self.data_dir)
             candidate_a, center_irc = ct.getRawCandidate(candidateInfo_tup.center_xyz, width_irc)
             candidate_t = torch.from_numpy(candidate_a).to(torch.float32)
             candidate_t = candidate_t.unsqueeze(0)
