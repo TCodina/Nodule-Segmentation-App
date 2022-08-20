@@ -313,11 +313,6 @@ class LunaTrainingApp:
         Display full and per-class statistics (loss and correct percentage).
         :param epoch_ndx: just to display the current epoch
         :param mode_str: train or val    # create writers for the first time (used inside logMetrics)
-    def initTensorboardWriters(self):
-        if self.trn_writer is None:
-            log_dir = os.path.join('runs', self.args.tb_prefix, self.time_str)
-            self.trn_writer = SummaryWriter(log_dir=log_dir + '-trn')
-            self.val_writer = SummaryWriter(log_dir=log_dir + '-val')idation
         :param metrics_t:
         :param classificationThreshold:
         :return:

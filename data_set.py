@@ -377,6 +377,7 @@ class LunaDataset(Dataset):
                 candidateInfo_tup.center_xyz,
                 width_irc,
                 self.use_cache,
+                data_dir=self.data_dir
             )
 
         elif self.use_cache:
