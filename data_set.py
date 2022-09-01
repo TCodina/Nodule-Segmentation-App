@@ -20,6 +20,8 @@ from util.util import XyzTuple, xyz2irc
 from util.logconf import logging
 
 log = logging.getLogger(__name__)  # Instance of logging for this file
+# log.setLevel(logging.WARN)
+# log.setLevel(logging.INFO)
 log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed
 
 raw_cache = getCache('cache_data_raw')  # get cache form this location
@@ -52,7 +54,8 @@ def getCandidateInfoList(requireOnDisk_bool=True, data_dir="data/"):
         for row in list(csv.reader(f))[1:]:
             series_uid = row[0]
 
-            # TODO: the following lines should run only for series_uid in disk
+            if series_uid not in presentOnDisk_set and requireOnDisk_bool:
+                continue
 
             annotationCenter_xyz = tuple([float(x) for x in row[1:4]])
             annotationDiameter_mm = float(row[4])
