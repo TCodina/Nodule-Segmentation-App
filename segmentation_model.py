@@ -52,7 +52,7 @@ class UNetWrapper(nn.Module):
         return fn_output
 
 
-# Take input and label and apply transformations to them to get augmented data.
+# Take input (tensor) and label (mask) and apply transformations to them to get augmented data.
 # TODO: why is this inside this file and as a subclass of Module?
 class SegmentationAugmentation(nn.Module):
     def __init__(self, flip=None, offset=None, scale=None, rotate=None, noise=None):
@@ -81,7 +81,7 @@ class SegmentationAugmentation(nn.Module):
 
             augmented_input_g += noise_t
 
-        return augmented_input_g, augmented_label_g > 0.5
+        return augmented_input_g, augmented_label_g > 0.5  # convert mask back to boolean
 
     def _build2dTransformMatrix(self):
         """

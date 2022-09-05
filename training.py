@@ -33,7 +33,6 @@ class LunaTrainingApp:
 
         # initialize parser
         parser = argparse.ArgumentParser()
-
         # add positional and optional arguments (whether num-workers or num_workers, later it's called by num_workers)
         parser.add_argument('--num_workers',
                             help='Number of worker processes for background data loading',
@@ -104,6 +103,7 @@ class LunaTrainingApp:
         self.val_writer = None
         self.totalTrainingSamples_count = 0
 
+        # store all augmentation parameters into dictionary
         self.augmentation_dict = {}
         if self.args.augmented or self.args.augment_flip:
             self.augmentation_dict['flip'] = True
@@ -295,8 +295,10 @@ class LunaTrainingApp:
 
         return loss_g.mean()
 
-    # create writers for the first time (used inside logMetrics) inside runs/ subdirectories
     def initTensorboardWriters(self):
+        """
+        create writers for the first time (used inside logMetrics) inside runs/ subdirectories
+        """
         if self.trn_writer is None:
             log_dir = os.path.join('runs', self.args.tb_prefix, self.time_str)
             self.trn_writer = SummaryWriter(log_dir=log_dir + '-trn')  # TODO: what is this object?

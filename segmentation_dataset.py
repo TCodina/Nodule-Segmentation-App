@@ -345,10 +345,11 @@ class Luna2dSegmentationDataset(Dataset):
     def __len__(self):
         return len(self.sample_list)
 
-    def __getitem__(self, ndx):  # TODO: KG! 411
+    def __getitem__(self, ndx):
         series_uid, slice_ndx = self.sample_list[ndx % len(self.sample_list)]  # TODO: why this %?
         return self.getitem_fullSlice(series_uid, slice_ndx)  # TODO: why do we need to call another function?
 
+    # TODO: Make this and getitem_trainingCrop below static functions by changing a few things.
     def getitem_fullSlice(self, series_uid, slice_ndx):
         """
         Get full slices of a given CT scan as 3D Torch tensors where the first dimension is the number of "channels".
@@ -374,10 +375,10 @@ class Luna2dSegmentationDataset(Dataset):
         # build pos_t by picking the single slice_ndx of the positive mask
         pos_t = torch.from_numpy(ct.positive_mask[slice_ndx]).unsqueeze(0)
 
-        return ct_t, pos_t, ct.series_uid, slice_ndx  # TODO: WHY THE HELL WE RETURN THE INPUTS...
+        return ct_t, pos_t, ct.series_uid, slice_ndx  # return inputs just for logging info later
 
 
-# Dataset for training (subclassing the validation dataset)  # TODO: KG 413!
+# Dataset for training (subclassing the validation dataset)
 class TrainingLuna2dSegmentationDataset(Luna2dSegmentationDataset):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -396,19 +397,16 @@ class TrainingLuna2dSegmentationDataset(Luna2dSegmentationDataset):
         return self.getitem_trainingCrop(candidateInfo_tup)
 
     def getitem_trainingCrop(self, candidateInfo_tup):
-        ct_a, pos_a, center_irc = getCtRawCandidate(
-            candidateInfo_tup.series_uid,
-            candidateInfo_tup.center_xyz,
-            (7, 96, 96),
-        )
-        pos_a = pos_a[3:4]
+        # chunk of 7 slides of size 96x96 each
+        ct_a, pos_a, center_irc = getCtRawCandidate(candidateInfo_tup.series_uid, candidateInfo_tup.center_xyz,
+                                                    (7, 96, 96), data_dir=self.data_dir)
+        pos_a = pos_a[3:4]  # pick center slice of postive mask
 
+        # picks random 64x64 crop inside original 96x96
         row_offset = random.randrange(0, 32)
         col_offset = random.randrange(0, 32)
-        ct_t = torch.from_numpy(ct_a[:, row_offset:row_offset + 64,
-                                col_offset:col_offset + 64]).to(torch.float32)
-        pos_t = torch.from_numpy(pos_a[:, row_offset:row_offset + 64,
-                                 col_offset:col_offset + 64]).to(torch.long)
+        ct_t = torch.from_numpy(ct_a[:, row_offset:row_offset + 64, col_offset:col_offset + 64]).to(torch.float32)
+        pos_t = torch.from_numpy(pos_a[:, row_offset:row_offset + 64, col_offset:col_offset + 64]).to(torch.long)
 
         slice_ndx = center_irc.index
 
