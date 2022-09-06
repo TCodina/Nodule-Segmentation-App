@@ -12,8 +12,8 @@ from torch.utils.data import DataLoader
 
 from util.util import enumerateWithEstimate  # fancy enumerate() which also estimate remaining computation time
 from util.logconf import logging  # display messages in a formatted way
-from data_set import LunaDataset
-from model import LunaModel
+from dataset_classification import LunaDataset
+from model_classification import LunaModel
 
 log = logging.getLogger(__name__)  # Instance of logging for this file
 log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed

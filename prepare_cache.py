@@ -4,7 +4,7 @@ import sys
 from torch.utils.data import DataLoader
 
 from util.util import enumerateWithEstimate
-from data_set import LunaDataset
+from dataset_classification import LunaDataset
 from util.logconf import logging
 
 log = logging.getLogger(__name__)  # Instance of logging for this file

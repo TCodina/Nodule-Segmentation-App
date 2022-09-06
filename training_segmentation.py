@@ -8,15 +8,14 @@ import sys
 import numpy as np
 from torch.utils.tensorboard import SummaryWriter  # to write metrics data in a format that TensorBoard will consume
 import torch
-import torch.nn as nn
 import torch.optim
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
 from util.util import enumerateWithEstimate  # fancy enumerate() which also estimate remaining computation time
 from util.logconf import logging  # display messages in a formatted way
-from segmentation_dataset import Luna2dSegmentationDataset, TrainingLuna2dSegmentationDataset, getCt
-from segmentation_model import UNetWrapper, SegmentationAugmentation
+from dataset_segmentation import Luna2dSegmentationDataset, TrainingLuna2dSegmentationDataset, getCt
+from model_segmentation import UNetWrapper, SegmentationAugmentation
 
 log = logging.getLogger(__name__)
 # log.setLevel(logging.WARN)
