@@ -25,7 +25,6 @@ log = logging.getLogger(__name__)  # Instance of logging for this file
 log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed
 
 raw_cache = getCache('cache_data_raw')  # get cache form this location
-#data_dir = "data/"  # directory where data is stored
 
 # cleaned and organized way of storing information for each candidate  (name tuple, name element1, name  element2, ...)
 CandidateInfoTuple = namedtuple('CandidateInfoTuple', 'isNodule_bool, diameter_mm, series_uid, center_xyz')

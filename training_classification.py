@@ -31,8 +31,7 @@ class LunaTrainingApp:
         if sys_argv is None:
             sys_argv = sys.argv[1:]  # excludes element 0, the name of the python file
 
-        # initialize parser
-        parser = argparse.ArgumentParser()
+        parser = argparse.ArgumentParser()  # initialize parser
         # add positional and optional arguments (whether num-workers or num_workers, later it's called by num_workers)
         parser.add_argument('--num_workers',
                             help='Number of worker processes for background data loading',
@@ -95,8 +94,7 @@ class LunaTrainingApp:
                             )
 
         self.args = parser.parse_args(sys_argv)  # store all given arguments
-        self.time_str = datetime.datetime.now().strftime(
-            '%Y-%m-%d_%H.%M.%S')  # timestamp to identify training runs (TODO: Where do we use this?)
+        self.time_str = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')  # timestamp to identify training runs
 
         # initialize writers to be used later for writing metrics data and tensorboard
         self.trn_writer = None
