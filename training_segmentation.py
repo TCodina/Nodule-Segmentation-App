@@ -127,8 +127,8 @@ class SegmentationTrainingApp:
 
         # initialize model and optimizer
         self.segmentation_model = UNetWrapper(in_channels=7, n_classes=1, depth=3, wf=4, padding=True, batch_norm=True,
-                                              up_mode='upconv')
-        self.augmentation_model = SegmentationAugmentation(**self.augmentation_dict)
+                                              up_mode='upconv').to(self.device)
+        self.augmentation_model = SegmentationAugmentation(**self.augmentation_dict).to(self.device)
         self.optimizer = Adam(self.segmentation_model.parameters())
 
         self.validation_cadence = 5  # epoch frequency of image logging
