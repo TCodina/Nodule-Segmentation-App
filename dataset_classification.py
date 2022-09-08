@@ -15,9 +15,6 @@ import torch.cuda
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
-from util.disk import getCache  # local function for caching
-from util.util import XyzTuple, xyz2irc
-from util.logconf import logging
 
 log = logging.getLogger(__name__)  # Instance of logging for this file
 # log.setLevel(logging.WARN)
