@@ -342,13 +342,13 @@ class Luna2dSegmentationDataset(Dataset):
         # filter candidates belonging to a series in series_list
         self.candidateInfo_list = [cit for cit in self.candidateInfo_list if cit.series_uid in series_set]
         # positive candidates (in series_list)
-        self.pos_list = [nt for nt in self.candidateInfo_list if nt.isNodule_bool]
+        self.positiveInfo_list = [nt for nt in self.candidateInfo_list if nt.isNodule_bool]
 
-        log.info("{!r}: {} {} series, {} slices, {} nodules".format(
-            self, len(self.series_list),
+        log.info("{} {} series, {} slices, {} nodules".format(
+            len(self.series_list),
             {None: 'general', True: 'validation', False: 'training'}[isValSet_bool],
             len(self.sample_list),
-            len(self.pos_list),
+            len(self.positiveInfo_list),
         ))
 
     def __len__(self):
@@ -397,17 +397,18 @@ class TrainingLuna2dSegmentationDataset(Luna2dSegmentationDataset):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.ratio_int = 2
+        self.ratio_int = 2  # TODO: what is this?
 
     def __len__(self):
         return 300000  # TODO: WHY THIS?
 
     def shuffleSamples(self):
+        # before shuffling the lists are sorted by diameter
         random.shuffle(self.candidateInfo_list)
-        random.shuffle(self.pos_list)
+        random.shuffle(self.positiveInfo_list)
 
     def __getitem__(self, ndx):  # overwrite getitem of validation dataset class
-        candidateInfo_tup = self.pos_list[ndx % len(self.pos_list)]
+        candidateInfo_tup = self.positiveInfo_list[ndx % len(self.positiveInfo_list)]
         return self.getitem_trainingCrop(candidateInfo_tup)
 
     def getitem_trainingCrop(self, candidateInfo_tup):  # TODO: make static

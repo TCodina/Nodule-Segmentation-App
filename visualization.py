@@ -1,9 +1,6 @@
-import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.colors import ListedColormap
-
-#from dataset_segmentation import Ct, LunaDataset
-matplotlib.use('nbagg')
 
 
 def showFullCt(ct_a, slice_ndx=None, fig_size=(20, 50)):
@@ -17,9 +14,9 @@ def showFullCt(ct_a, slice_ndx=None, fig_size=(20, 50)):
         fig_size (tuple):
     """
 
-    origin_irc = [s//2 for s in ct_a.shape]
+    ci, cr, cc = [s//2 for s in ct_a.shape]
     if slice_ndx:
-        origin_irc[0] = slice_ndx
+        ci = slice_ndx
 
     fig = plt.figure(figsize=fig_size)
 
@@ -27,126 +24,83 @@ def showFullCt(ct_a, slice_ndx=None, fig_size=(20, 50)):
     cmap = 'gray'
 
     subplot = fig.add_subplot(1, 3, 1)
-    subplot.set_title('index {}'.format(int(origin_irc[0])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct_a[int(origin_irc[0])], clim=clim, cmap=cmap)
+    subplot.set_title(f'index {ci}')
+    plt.imshow(ct_a[ci], clim=clim, cmap=cmap)
 
     subplot = fig.add_subplot(1, 3, 2)
-    subplot.set_title('row {}'.format(int(origin_irc[1])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct_a[:, int(origin_irc[1])], clim=clim, cmap=cmap)
+    subplot.set_title(f'row {cr}')
+    plt.imshow(ct_a[:, cr], clim=clim, cmap=cmap)
     plt.gca().invert_yaxis()
 
     subplot = fig.add_subplot(1, 3, 3)
-    subplot.set_title('col {}'.format(int(origin_irc[2])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct_a[:, :, int(origin_irc[2])], clim=clim, cmap=cmap)
+    subplot.set_title(f'col {cc}')
+    plt.imshow(ct_a[:, :, cc], clim=clim, cmap=cmap)
     plt.gca().invert_yaxis()
 
 
-def showFullMask(mask, slice_ndx=None, fig_size=(5, 10)):
+def showSliceWithMask(ct_slice, ct_slice_mask, slice_ndx, fig_size=(5, 10)):
+
+    clim_ct = (-1000.0, 1000)
+    cmap_ct = 'gray'
+
+    clim_mask = (0, 1)
+    cmap_mask = ListedColormap(['black', 'red'], N=2)
+
+    plt.figure(figsize=fig_size)
+    plt.title(f"slice {slice_ndx}")
+    plt.imshow(ct_slice, clim=clim_ct, cmap=cmap_ct)
+    plt.imshow(ct_slice_mask, clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
+
+
+def showMultipleSlicesWithMask(ct_a, mask, slice_ndx_list, fig_size=(20, 50)):
+
+    clim_ct = (-1000.0, 1000)
+    cmap_ct = 'gray'
+
+    clim_mask = (0, 1)
+    cmap_mask = ListedColormap(['black', 'red'], N=2)
+
+    fig = plt.figure(figsize=fig_size)
+    cols = 3
+    rows = int(np.ceil(len(slice_ndx_list) / cols))
+
+    for i, slice_ndx in enumerate(slice_ndx_list):
+        subplot = fig.add_subplot(rows, cols, 1 + i)
+        plt.title(f"slice {slice_ndx}")
+        plt.imshow(ct_a[slice_ndx], clim=clim_ct, cmap=cmap_ct)
+        plt.imshow(mask[slice_ndx], clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
+
+
+def showCandidate(cand_chunk, slice_ndx, cand_mask=None, fig_size=(20, 50)):
     """
-    Plot mask of a given Ct scan as a 2D plot passing through the center of the ct scan or a specific slice if
-    slice_ndx is given.
+    Plot candidate chunk together with its mask and center.
 
     Args:
-        mask (numpy.array):
-        slice_ndx (int): allow to pick particular slice
+        cand_chunk (numpy.array):
+        cand_mask (numpy.array):
+        slice_ndx (int):
         fig_size (tuple):
     """
 
-    if slice_ndx is None:
-        slice_ndx = mask.shape[0]//2  # picks center slice
+    fig = plt.figure(figsize=fig_size)
 
-    clim = (0, 1)
-    binary_map = ListedColormap(['black', 'red'], N=2)
+    clim_ct = (-1000.0, 1000)
+    cmap_ct = 'gray'
 
-    plt.figure(figsize=fig_size)
-    plt.imshow(mask[slice_ndx], clim=clim, cmap=binary_map)
-    plt.title('index {}'.format(slice_ndx), fontsize=30)
+    clim_mask = (0, 1)
+    cmap_mask = ListedColormap(['black', 'red'], N=2)
 
+    i, r, c = cand_chunk.shape  # IRC coordinates
 
-# TODO: SEE WHAT TO DO WITH THIS FUNCTION...
-def showCandidate(series_uid, batch_ndx=None, **kwargs):
-    """
-    KG...
-    :param series_uid: ct scan series_uid
-    :param batch_ndx: index of desired candidate
-    :param kwargs:
-    :return:
-    """
-    ds = LunaDataset(series_uid=series_uid, **kwargs)  # get dataset for sample in a single ct scan
-    pos_list = [i for i, x in enumerate(ds.candidateInfo_list) if x.isNodule_bool]  # list of positions for nodules
+    index_list = np.round(np.linspace(0, i - 1, min(i, 7))).astype(int).tolist()  # up to 7 images
 
-    # define batch_ndx from input or taking first element of pos_list
-    if batch_ndx is None:
-        if pos_list:
-            batch_ndx = pos_list[0]
-        else:
-            print("Warning: no positive samples found; using first negative sample.")
-            batch_ndx = 0
+    cr = r//2  # center row
+    cc = c//2  # center column
 
-    ct = Ct(series_uid)
-    ct_t, pos_t, series_uid, center_irc = ds[batch_ndx]
-    ct_a = ct_t[0].numpy()
-
-    fig = plt.figure(figsize=(30, 50))
-
-    group_list = [
-        [9, 11, 13],
-        [15, 16, 17],
-        [19, 21, 23],
-    ]
-
-    subplot = fig.add_subplot(len(group_list) + 2, 3, 1)
-    subplot.set_title('index {}'.format(int(center_irc[0])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct.hu_a[int(center_irc[0])], clim=clim, cmap='gray')
-
-    subplot = fig.add_subplot(len(group_list) + 2, 3, 2)
-    subplot.set_title('row {}'.format(int(center_irc[1])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct.hu_a[:, int(center_irc[1])], clim=clim, cmap='gray')
-    plt.gca().invert_yaxis()
-
-    subplot = fig.add_subplot(len(group_list) + 2, 3, 3)
-    subplot.set_title('col {}'.format(int(center_irc[2])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct.hu_a[:, :, int(center_irc[2])], clim=clim, cmap='gray')
-    plt.gca().invert_yaxis()
-
-    subplot = fig.add_subplot(len(group_list) + 2, 3, 4)
-    subplot.set_title('index {}'.format(int(center_irc[0])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct_a[ct_a.shape[0] // 2], clim=clim, cmap='gray')
-
-    subplot = fig.add_subplot(len(group_list) + 2, 3, 5)
-    subplot.set_title('row {}'.format(int(center_irc[1])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct_a[:, ct_a.shape[1] // 2], clim=clim, cmap='gray')
-    plt.gca().invert_yaxis()
-
-    subplot = fig.add_subplot(len(group_list) + 2, 3, 6)
-    subplot.set_title('col {}'.format(int(center_irc[2])), fontsize=30)
-    for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-        label.set_fontsize(20)
-    plt.imshow(ct_a[:, :, ct_a.shape[2] // 2], clim=clim, cmap='gray')
-    plt.gca().invert_yaxis()
-
-    for row, index_list in enumerate(group_list):
-        for col, index in enumerate(index_list):
-            subplot = fig.add_subplot(len(group_list) + 2, 3, row * 3 + col + 7)
-            subplot.set_title('slice {}'.format(index), fontsize=30)
-            for label in (subplot.get_xticklabels() + subplot.get_yticklabels()):
-                label.set_fontsize(20)
-            plt.imshow(ct_a[index], clim=clim, cmap='gray')
-
-    print(series_uid, batch_ndx, bool(pos_t[0]), pos_list)
+    for fig_num, index in enumerate(index_list):
+        subplot = fig.add_subplot(1, len(index_list), 1 + fig_num)
+        subplot.set_title('slice {}'.format(slice_ndx - i//2 + index))
+        plt.imshow(cand_chunk[index], clim=clim_ct, cmap=cmap_ct)
+        if cand_mask is not None:
+            plt.imshow(cand_mask[index], clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
+            plt.plot(cr, cc, 'rx')  # mark center of candidate
