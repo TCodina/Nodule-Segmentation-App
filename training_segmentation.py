@@ -12,7 +12,6 @@ import torch.optim
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from util.util import enumerateWithEstimate  # fancy enumerate() which also estimate remaining computation time
 from util.logconf import logging  # display messages in a formatted way
 from dataset_segmentation import Luna2dSegmentationDataset, TrainingLuna2dSegmentationDataset, getCt
 from model_segmentation import UNetWrapper, SegmentationAugmentation
@@ -85,11 +84,6 @@ class SegmentationTrainingApp:
                             action='store_true',
                             default=False,
                             )
-        parser.add_argument('--data_dir',
-                            help='Directory of data',
-                            default="data/",
-                            type=str,
-                            )
         parser.add_argument('--tb_prefix',
                             default='run_seg',
                             help="Data prefix to use for Tensorboard run.",
@@ -130,7 +124,7 @@ class SegmentationTrainingApp:
         self.augmentation_model = SegmentationAugmentation(**self.augmentation_dict).to(self.device)
         self.optimizer = Adam(self.segmentation_model.parameters())
 
-        self.validation_cadence = 5  # epoch frequency of image logging
+        self.validation_cadence = 2  # epoch frequency of image logging
 
     def main(self):
         """
@@ -147,22 +141,14 @@ class SegmentationTrainingApp:
 
         for epoch_ndx in range(1, self.args.epochs + 1):
             log.info("Epoch {} of {}, {}/{} batches (trn/val) of size {}".format(
-                epoch_ndx,
-                self.args.epochs,
-                len(trn_dl),
-                len(val_dl),
-                self.batch_size,
-            ))
+                epoch_ndx, self.args.epochs, len(trn_dl), len(val_dl), self.batch_size))
 
-            # train and returns training metrics for a single epoch
-            trnMetrics_t = self.doTraining(epoch_ndx, trn_dl)
-            # display training metrics and update tb
-            self.logMetrics(epoch_ndx, 'trn', trnMetrics_t)
+            trnMetrics_t = self.doTraining(epoch_ndx, trn_dl)  # train and returns training metrics for a single epoch
+            self.logMetrics(epoch_ndx, 'trn', trnMetrics_t)  # display training metrics and update tb
 
             # validation and logging every validation_cadence epochs
             if epoch_ndx == 1 or epoch_ndx % self.validation_cadence == 0:
-                # return validation metrics for a single epoch
-                valMetrics_t = self.doValidation(epoch_ndx, val_dl)
+                valMetrics_t = self.doValidation(epoch_ndx, val_dl)  # return validation metrics for a single epoch
 
                 # compute score, display validation metrics and update best score
                 score = self.logMetrics(epoch_ndx, 'val', valMetrics_t)
@@ -185,11 +171,9 @@ class SegmentationTrainingApp:
         :return: dataloader
         """
         if isValSet_bool:
-            dataset = Luna2dSegmentationDataset(val_stride=10, isValSet_bool=True, contextSlices_count=3,
-                                                data_dir=self.args.data_dir)
+            dataset = Luna2dSegmentationDataset(val_stride=10, isValSet_bool=True, contextSlices_count=3)
         else:
-            dataset = TrainingLuna2dSegmentationDataset(val_stride=10, isValSet_bool=False, contextSlices_count=3,
-                                                     data_dir=self.args.data_dir)
+            dataset = TrainingLuna2dSegmentationDataset(val_stride=10, isValSet_bool=False, contextSlices_count=3)
 
         dataloader = DataLoader(
             dataset,
@@ -217,12 +201,13 @@ class SegmentationTrainingApp:
         trn_dl.dataset.shuffleSamples()
         trnMetrics_g = torch.zeros(METRICS_SIZE, len(trn_dl.dataset), device=self.device)
 
-        batch_iter = enumerateWithEstimate(
-            trn_dl,
-            "E{} Training".format(epoch_ndx),
-            start_ndx=trn_dl.num_workers,
-        )
-        for batch_ndx, batch_tup in batch_iter:
+        for batch_ndx, batch_tup in enumerate(trn_dl):
+
+            if batch_ndx == 0:
+                log.info(f"Starting training at epoch {epoch_ndx}")
+            elif (batch_ndx % 9) == 0:
+                log.info("E {} {:-4}/{}".format(epoch_ndx, batch_ndx, len(trn_dl)))
+
             self.optimizer.zero_grad()
 
             loss_var = self.computeBatchLoss(batch_ndx, batch_tup, trn_dl.batch_size, trnMetrics_g)
@@ -230,7 +215,9 @@ class SegmentationTrainingApp:
 
             self.optimizer.step()
 
-        self.totalTrainingSamples_count += trnMetrics_g.size(1)
+        log.info(f"Training epoch {epoch_ndx} finished.")
+
+        self.totalTrainingSamples_count += trnMetrics_g.size()
 
         return trnMetrics_g.to('cpu')
 
@@ -245,14 +232,16 @@ class SegmentationTrainingApp:
             self.segmentation_model.eval()
             valMetrics_g = torch.zeros(METRICS_SIZE, len(val_dl.dataset), device=self.device)
 
-            batch_iter = enumerateWithEstimate(
-                val_dl,
-                "E{} Validation ".format(epoch_ndx),
-                start_ndx=val_dl.num_workers,
-            )
-            for batch_ndx, batch_tup in batch_iter:
+            for batch_ndx, batch_tup in enumerate(val_dl):
                 # different from doTraining, here we don't keep the loss for validation
+                if batch_ndx == 0:
+                    log.info(f"Starting validation at epoch {epoch_ndx}")
+                elif (batch_ndx % 5) == 0:
+                    log.info("E {} {:-4}/{}".format(epoch_ndx, batch_ndx, len(val_dl)))
+
                 self.computeBatchLoss(batch_ndx, batch_tup, val_dl.batch_size, valMetrics_g)
+
+        log.info(f"Validation epoch {epoch_ndx} finished.")
 
         return valMetrics_g.to('cpu')
 
@@ -316,7 +305,7 @@ class SegmentationTrainingApp:
 
         images = sorted(dl.dataset.series_list)[:12]  # pick the same 12 CT scans every time
         for series_ndx, series_uid in enumerate(images):
-            ct = getCt(series_uid, data_dir=self.args.data_dir)
+            ct = getCt(series_uid)
 
             # select 6 equidistant slices throughout the CT
             for slice_ndx in range(6):

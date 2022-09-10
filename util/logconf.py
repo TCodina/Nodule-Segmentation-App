@@ -8,7 +8,7 @@ for handler in list(root_logger.handlers):
 
 # set format
 logfmt_str = "%(asctime)s %(levelname)-8s pid: %(process)d %(name)s : %(lineno)03d : %(funcName)s %(message)s"
-formatter = logging.Formatter(logfmt_str)
+formatter = logging.Formatter(logfmt_str, "%H:%M:%S")
 
 # create handler
 streamHandler = logging.StreamHandler()
