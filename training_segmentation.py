@@ -204,9 +204,10 @@ class SegmentationTrainingApp:
         for batch_ndx, batch_tup in enumerate(trn_dl):
 
             if batch_ndx == 0:
-                log.info(f"Starting training at epoch {epoch_ndx}")
-            elif (batch_ndx % 9) == 0:
-                log.info("E {} {:-4}/{}".format(epoch_ndx, batch_ndx, len(trn_dl)))
+                log.info(f"Starting training at E{epoch_ndx} ----/{len(trn_dl)}")
+
+            elif (batch_ndx % (len(trn_dl)//5)) == 0:
+                log.info("E{} {:-4}/{}".format(epoch_ndx, batch_ndx, len(trn_dl)))
 
             self.optimizer.zero_grad()
 
@@ -215,9 +216,9 @@ class SegmentationTrainingApp:
 
             self.optimizer.step()
 
-        log.info(f"Training epoch {epoch_ndx} finished.")
+        log.info(f"Training E{epoch_ndx} finished.")
 
-        self.totalTrainingSamples_count += trnMetrics_g.size()
+        self.totalTrainingSamples_count += trnMetrics_g.size(1)
 
         return trnMetrics_g.to('cpu')
 
@@ -235,13 +236,14 @@ class SegmentationTrainingApp:
             for batch_ndx, batch_tup in enumerate(val_dl):
                 # different from doTraining, here we don't keep the loss for validation
                 if batch_ndx == 0:
-                    log.info(f"Starting validation at epoch {epoch_ndx}")
-                elif (batch_ndx % 5) == 0:
-                    log.info("E {} {:-4}/{}".format(epoch_ndx, batch_ndx, len(val_dl)))
+                    log.info(f"Starting validation at epoch E{epoch_ndx} ----/{len(val_dl)}")
+
+                elif (batch_ndx % (len(val_dl)//5)) == 0:
+                    log.info("E{} {:-4}/{}".format(epoch_ndx, batch_ndx, len(val_dl)))
 
                 self.computeBatchLoss(batch_ndx, batch_tup, val_dl.batch_size, valMetrics_g)
 
-        log.info(f"Validation epoch {epoch_ndx} finished.")
+        log.info(f"Validation E{epoch_ndx} finished.")
 
         return valMetrics_g.to('cpu')
 

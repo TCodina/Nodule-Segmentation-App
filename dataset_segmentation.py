@@ -21,9 +21,10 @@ log = logging.getLogger(__name__)  # Instance of logging for this file
 # log.setLevel(logging.INFO)
 log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed
 
-data_dir = './../data/'  # directory where data files are stored
+# data_dir = './../data/'  # directory where data files are stored
+data_dir = "/content/drive/MyDrive/LUNA_data_set/"
 
-raw_cache = getCache('cache_data_raw')  # get cache form this location
+raw_cache = getCache('./../cache_data_raw')  # get cache form this location
 
 # cleaned and organized way of storing information for each candidate  (name tuple, name element1, name  element2, ...)
 CandidateInfoTuple = namedtuple('CandidateInfoTuple',
