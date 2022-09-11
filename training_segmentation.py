@@ -312,7 +312,7 @@ class SegmentationTrainingApp:
             # select 6 equidistant slices throughout the CT
             for slice_ndx in range(6):
                 # get slice
-                ct_ndx = slice_ndx * (ct.hu_a.shape[0] - 1) // 5
+                ct_ndx = slice_ndx * (ct.ct_a.shape[0] - 1) // 5
                 ct_t, label_t, series_uid, ct_ndx = dl.dataset.getitem_fullSlice(series_uid, ct_ndx)
 
                 # send it to device
