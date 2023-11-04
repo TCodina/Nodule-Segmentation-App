@@ -104,9 +104,9 @@ class TrainingApp:
 
         print(f"Starting training at E{epoch_ndx} ----/{len(trn_dl)}")
         for batch_ndx, batch_tup in enumerate(trn_dl):
-
-            if (batch_ndx % (len(trn_dl)//5)) == 0 and batch_ndx != 0:
-                print(f"E{epoch_ndx} {batch_ndx:-4}/{len(trn_dl)}")
+            print(f"E{epoch_ndx} {batch_ndx:-4}/{len(trn_dl)}")
+            #if (batch_ndx % (len(trn_dl)//5)) == 0 and batch_ndx != 0:
+            #    print(f"E{epoch_ndx} {batch_ndx:-4}/{len(trn_dl)}")
 
             self.optimizer.zero_grad()
 

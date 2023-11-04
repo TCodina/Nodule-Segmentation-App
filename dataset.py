@@ -34,7 +34,7 @@ from util.util import XyzTuple, xyz2irc
 data_dir = './../data/'  # directory where data files are stored
 # data_dir = "/content/drive/MyDrive/LUNA_data_set/"
 
-raw_cache = getCache('./../cache_data_raw')  # get cache form this location
+raw_cache = getCache('./../cache_data')  # get cache form this location
 
 
 def get_series_on_disk():
@@ -113,7 +113,7 @@ class Ct:
             mask_a (np.array): array of the size of the ct scan but with boolean values. True for nodules.
         """
 
-        bounding_box_a = np.zeros_like(self.ct_a, dtype=np.bool)  # init with all False pixels
+        bounding_box_a = np.zeros_like(self.ct_a, dtype=bool)  # init with all False pixels
 
         # build a surrounding box for each nodule inside the entire ct scan
         for nodule_xyz in list(zip(nodules_pd.coordX, nodules_pd.coordY, nodules_pd.coordZ)):
@@ -286,7 +286,7 @@ class NoduleSegmentationDataset(Dataset):
         return len(self.sample_list)
 
     def __getitem__(self, ndx):
-        series_uid, slice_ndx = self.sample_list[ndx]
+        series_uid, slice_ndx = self.sample_list[ndx % len(self.sample_list)]
         return self.getitem_full_slice(series_uid, slice_ndx)  # TODO: why do we need to call another function?
 
     # TODO: Make this and getitem_trainingCrop below static functions by changing a few things.
@@ -331,14 +331,15 @@ class TrainingNoduleSegmentationDataset(NoduleSegmentationDataset):
         self.ratio_int = 2  # TODO: what is this?
 
     def __len__(self):
-        return 300000  # TODO: WHY THIS?
+        return len(self.nodule_df)
+        #return 100  # TODO: WHY THIS? ORIGINAL SET TO 300000
 
     def shuffle_samples(self):
         # before shuffling the lists are sorted by diameter
         self.nodule_df = self.nodule_df.sample(frac=1)
 
     def __getitem__(self, ndx):  # overwrite getitem of validation dataset class
-        nodule = self.nodule_df.iloc[ndx]
+        nodule = self.nodule_df.iloc[ndx % len(self.nodule_df)]
         return self.getitem_training_crop(nodule)
 
     def getitem_training_crop(self, nodule):  # TODO: make static

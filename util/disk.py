@@ -5,12 +5,27 @@ from diskcache import FanoutCache, Disk, core
 from diskcache.core import io
 from io import BytesIO
 from diskcache.core import MODE_BINARY
+import shutil
+import os
+
 
 from util.logconf import logging
 log = logging.getLogger(__name__)
 # log.setLevel(logging.WARN)
 log.setLevel(logging.INFO)
 # log.setLevel(logging.DEBUG)
+
+
+def clean_cache(cache_dir):
+  """
+  Clean up any old data that might be around.
+  """
+  try:
+    shutil.rmtree(cache_dir)
+  except FileNotFoundError:
+    pass
+
+  os.mkdir(cache_dir)
 
 
 class GzipDisk(Disk):
