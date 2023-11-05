@@ -1,7 +1,7 @@
 import datetime
 import os
 
-import numpy as np  
+import numpy as np
 import torch
 import torch.optim
 from torch.optim import Adam
@@ -25,7 +25,7 @@ class TrainingApp:
                                       'noise': 25.0}
         else:
             self.augmentation_dict = augmentation_dict
-        self.time_str = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')  # timestamp to identify training runs
+
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
 
@@ -41,6 +41,9 @@ class TrainingApp:
         self.optimizer = Adam(self.model.parameters())
         self.validation_cadence = 2  # epoch frequency of test again validation set
 
+        self.metric_history = {'trn_loss': [],
+                               'val_loss': []}
+
     def main(self):
         """
         Here is where the magic happens. It trains the model for all epochs, store the training and
@@ -55,10 +58,10 @@ class TrainingApp:
         best_score = 0.0  # to keep track of best score during epochs
 
         for epoch_ndx in range(1, self.epochs + 1):
-            print(f"Epoch {epoch_ndx} of {self.epochs}, {len(trn_dl)}/{len(val_dl)} batches (trn/val) /"
-                  f"of size {self.batch_size}")
+            print(f"Epoch {epoch_ndx} of {self.epochs}, {len(trn_dl)}/{len(val_dl)} batches (trn/val)"
+                  f" of size {self.batch_size}")
 
-            self.train(epoch_ndx, trn_dl)  # train and returns training metrics for a single epoch
+            self.train(epoch_ndx, trn_dl)  # train and store training loss for a single epoch
 
             # validation and logging every validation_cadence epochs
             if epoch_ndx == 1 or epoch_ndx % self.validation_cadence == 0:
@@ -93,7 +96,7 @@ class TrainingApp:
             Compute the loss
             Apply backprop to get gradients
             Update model's parameters by performing an optimizer step
-        It also returns the training metrics
+        It also stores the training metrics
         :param epoch_ndx: the current epoch just to display it at some point
         :param trn_dl:
         :return: training metric
@@ -102,20 +105,25 @@ class TrainingApp:
         self.model.train()
         trn_dl.dataset.shuffle_samples()
 
+        loss_epoch = 0  # for accumulated training loss along entire epoch
         print(f"Starting training at E{epoch_ndx} ----/{len(trn_dl)}")
         for batch_ndx, batch_tup in enumerate(trn_dl):
-            print(f"E{epoch_ndx} {batch_ndx:-4}/{len(trn_dl)}")
-            #if (batch_ndx % (len(trn_dl)//5)) == 0 and batch_ndx != 0:
-            #    print(f"E{epoch_ndx} {batch_ndx:-4}/{len(trn_dl)}")
+            if (batch_ndx % (len(trn_dl) // 10)) == 0 and batch_ndx != 0:
+                print(f"E{epoch_ndx} {batch_ndx:-4}/{len(trn_dl)}")
 
             self.optimizer.zero_grad()
 
-            loss_var = self.compute_loss(batch_tup)
-            loss_var.backward()
+            loss_batch = self.compute_loss(batch_tup)
+            loss_batch.backward()
+            loss_epoch += loss_batch.item()
 
             self.optimizer.step()
 
-        print(f"Training E{epoch_ndx} finished.")
+        loss_epoch /= len(trn_dl) * self.batch_size  # normalize by number of samples
+
+        print(f"Training E{epoch_ndx} finished.\n")
+        print(f'Training loss: {loss_epoch}')
+        self.metric_history['trn_loss'].append(loss_epoch)  # store loss in metric dict
 
     def validate(self, epoch_ndx, val_dl):
         """
@@ -124,19 +132,26 @@ class TrainingApp:
         :param val_dl:
         :return: validation metrics
         """
+
+        loss_epoch = 0
         with torch.no_grad():
             self.model.eval()
 
             print(f"Starting validation at epoch E{epoch_ndx} ----/{len(val_dl)}")
             for batch_ndx, batch_tup in enumerate(val_dl):
-                # different from doTraining, here we don't keep the loss for validation
+                # different from training, here we don't keep the loss for validation
 
-                if (batch_ndx % (len(val_dl)//5)) == 0 and batch_ndx !=0:
+                if (batch_ndx % (len(val_dl) // 10)) == 0 and batch_ndx != 0:
                     print(f"E{epoch_ndx} {batch_ndx:-4}/{len(val_dl)}")
 
-                self.compute_loss(batch_tup)
+                loss_batch = self.compute_loss(batch_tup)
+                loss_epoch += loss_batch.item()
+
+            loss_epoch /= len(val_dl) * self.batch_size  # normalize by number of samples
 
         print(f"Validation E{epoch_ndx} finished.")
+        print(f'Validation loss: {loss_epoch}')
+        self.metric_history['val_loss'].append(loss_epoch)  # store loss in metric dict
 
     def compute_loss(self, batch_tup):
         """
@@ -165,7 +180,8 @@ class TrainingApp:
         Save model parameters for the current run.
         If the latter is the best run so far, it creates a second file for it
         """
-        file_path = os.path.join('saved_models', f'{self.time_str}.state')
+        time_str = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')  # timestamp to identify training runs
+        file_path = os.path.join('saved_models', f'{time_str}.state')
         os.makedirs(os.path.dirname(file_path), mode=0o755, exist_ok=True)
         state = {
             'time': str(datetime.datetime.now()),

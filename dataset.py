@@ -14,7 +14,6 @@ Classes:
 """
 
 import pandas as pd
-import csv
 import functools
 import glob
 import os
@@ -28,13 +27,13 @@ import torch
 import torch.cuda
 from torch.utils.data import Dataset
 
-from util.disk import getCache  # local function for caching
+from util.disk import get_cache  # local function for caching
 from util.util import XyzTuple, xyz2irc
 
-data_dir = './../data/'  # directory where data files are stored
-# data_dir = "/content/drive/MyDrive/LUNA_data_set/"
+# data_dir = './../data/'  # directory where data files are stored
+data_dir = "/content/drive/MyDrive/LUNA_data_set/"
 
-raw_cache = getCache('./../cache_data')  # get cache form this location
+cache_data = get_cache('./../cache_data')  # get cache form this location
 
 
 def get_series_on_disk():
@@ -66,8 +65,7 @@ class Ct:
     def __init__(self, series_uid):
 
         self.series_uid = series_uid
-
-        mhd_path = glob.glob(data_dir + f'subset*/{series_uid}.mhd')[0]
+        mhd_path = glob.glob(data_dir + f'subset*/{self.series_uid}.mhd')[0]
 
         # black-box method to read from the ct format (MetaIO) to numpy array
         ct_mhd = sitk.ReadImage(mhd_path)  # implicitly consumes the .raw file in addition to the passed-in .mhd file
@@ -212,7 +210,7 @@ def get_ct(series_uid):
 
 
 # cache on disk differently, if this cache is commented, the caching does not happen  at all! TODO: explain this
-@raw_cache.memoize(typed=True)
+@cache_data.memoize(typed=True)
 def get_ct_candidate_chunk(series_uid, center_xyz, width_irc):
     """
     Initialize get_candidate_chunk and cache it on disk.
@@ -224,7 +222,7 @@ def get_ct_candidate_chunk(series_uid, center_xyz, width_irc):
 
 # cache the size of each CT scan and its positive inidices,
 # so not to load the whole scan every time we need its size only
-@raw_cache.memoize(typed=True)
+@cache_data.memoize(typed=True)
 def get_ct_size_and_indices(series_uid):
     """
     Returns number of slices and the entire list of positive indices and cache them in disk.
@@ -331,8 +329,8 @@ class TrainingNoduleSegmentationDataset(NoduleSegmentationDataset):
         self.ratio_int = 2  # TODO: what is this?
 
     def __len__(self):
-        return len(self.nodule_df)
-        #return 100  # TODO: WHY THIS? ORIGINAL SET TO 300000
+        repetitions = 500
+        return len(self.nodule_df)*repetitions  # more than actual length because of random crop and augmentation
 
     def shuffle_samples(self):
         # before shuffling the lists are sorted by diameter
