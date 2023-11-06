@@ -10,7 +10,7 @@ functions:
     get_ct_sample_size(series_uid) -
 
 Classes:
-   j Ct(series_uid) - create an instance of a ct scan from a series_uid
+    Ct(series_uid) - create an instance of a ct scan from a series_uid
 """
 
 import pandas as pd
@@ -30,8 +30,8 @@ from torch.utils.data import Dataset
 from util.disk import get_cache  # local function for caching
 from util.util import XyzTuple, xyz2irc
 
-# data_dir = './../data/'  # directory where data files are stored
-data_dir = "/content/drive/MyDrive/LUNA_data_set/"
+data_dir = './../data/'  # directory where data files are stored
+# data_dir = "/content/drive/MyDrive/LUNA_data_set/"
 
 cache_data = get_cache('./../cache_data')  # get cache form this location
 
@@ -52,15 +52,8 @@ def get_nodule_dataframe():
     return nodule_on_disk_df.sort_values('diameter_mm').reset_index(drop=True)
 
 
-# def get_nodules_from_series(serie_uid):
-#     all_nodules = get_nodule_dataframe()
-#     nodules_serie = all_nodules[all_nodules['seriesuid'] == serie_uid]
-#     return nodules_serie
-
-
 # Ct class whose elements are ct scans as numpy arrays,
-# together with information about the candidates inside them
-# and their locations.
+# together with information about the nodules inside them and their locations.
 class Ct:
     def __init__(self, series_uid):
 
@@ -86,18 +79,17 @@ class Ct:
         # get all nodules in given series
         df = get_nodule_dataframe()
         self.nodules_df = df[df.seriesuid == series_uid]  # TODO: should I reset indices here?
-        # build mask
-        self.positive_mask = self.build_annotation_mask(self.nodules_df)
+        # build mask of the same size as original ct but with boolean values: 1 for nodule 0 for non-nodule
+        self.mask = self.build_mask(self.nodules_df)
         # list of indices of the ct scan labeling the slices that have at least one nodule
-        self.positive_indexes = (self.positive_mask.sum(axis=(1, 2)).nonzero()[0].tolist())
-
+        self.positive_indices = (self.mask.sum(axis=(1, 2)).nonzero()[0].tolist())
 
     # TODO: add information of the diammeter to avoid weird rectangle masks
-    def build_annotation_mask(self, nodules_pd, threshold_hu=-700):
+    def build_mask(self, nodules_df, threshold_hu=-700):
         """
         Build an array of the size of the corresponding ct scan but with boolean values for each pixel.
         True for nodule and False for non-nodule.
-        This annotation-mask is created by building a bounding box around each
+        This mask is created by building a bounding box around each
         human-annotated nodule's center and setting to True all pixels that are inside these boxes
         AND also have values greater than a given threshold.
         This annotation-mask is used as the ground truth for segmentation.
@@ -111,10 +103,12 @@ class Ct:
             mask_a (np.array): array of the size of the ct scan but with boolean values. True for nodules.
         """
 
-        bounding_box_a = np.zeros_like(self.ct_a, dtype=bool)  # init with all False pixels
+        bounding_box = np.zeros_like(self.ct_a, dtype=bool)  # init with all False pixels
 
         # build a surrounding box for each nodule inside the entire ct scan
-        for nodule_xyz in list(zip(nodules_pd.coordX, nodules_pd.coordY, nodules_pd.coordZ)):
+        for nodule_xyz in list(zip(nodules_df.coordX,
+                                   nodules_df.coordY,
+                                   nodules_df.coordZ)):
             ci, cr, cc = xyz2irc(nodule_xyz, self.origin_xyz, self.vxSize_xyz, self.direction_a)
 
             # find limits over index direction
@@ -145,22 +139,23 @@ class Ct:
                 col_radius -= 1
 
             # set only pixels inside the box surrounding the nodule to True, all the rest of the ct array stays False
-            bounding_box_a[
-                ci - index_radius: ci + index_radius + 1,
-                cr - row_radius: cr + row_radius + 1,
-                cc - col_radius: cc + col_radius + 1
-                ] = True
+            bounding_box[
+            ci - index_radius: ci + index_radius + 1,
+            cr - row_radius: cr + row_radius + 1,
+            cc - col_radius: cc + col_radius + 1
+            ] = True
 
         # build the mask for the ENTIRE Ct scan by setting to True only the pixels that are inside a box
         # AND are greater than threshold.
-        mask_a = bounding_box_a & (self.ct_a > threshold_hu)
+        mask = bounding_box & (self.ct_a > threshold_hu)
 
-        return mask_a
+        return mask
 
-    def get_candidate_chunk(self, center_xyz, width_irc):
+    def get_cuboid(self, center_xyz, width_irc):
         """
-        Builds a chunk of data of sizes specified in width_irc, around a center's candidate, from the corresponding
-        Ct scan. This chunk is returned as a portion of the Ct scan and as a portion of the positive_mask.
+        Builds a 3D chunk of data (cuboid) of sizes specified in width_irc, around the point center_xyz,
+        from the corresponding Ct scan.
+        The cuboid is returned as a portion of the Ct scan and as a portion of the positive_mask.
 
         Args:
             center_xyz (tuple): center of the candidate in xyz system
@@ -196,9 +191,9 @@ class Ct:
 
         # get chunks by slicing over each direction
         ct_chunk = self.ct_a[tuple(slice_list)]
-        pos_chunk = self.positive_mask[tuple(slice_list)]
+        mask_chunk = self.mask[tuple(slice_list)]
 
-        return ct_chunk, pos_chunk, center_irc
+        return ct_chunk, mask_chunk, center_irc
 
 
 @functools.lru_cache(1, typed=True)  # cache on disk 1 ct scan at a time
@@ -211,13 +206,13 @@ def get_ct(series_uid):
 
 # cache on disk differently, if this cache is commented, the caching does not happen  at all! TODO: explain this
 @cache_data.memoize(typed=True)
-def get_ct_candidate_chunk(series_uid, center_xyz, width_irc):
+def get_ct_cuboid(series_uid, center_xyz, width_irc):
     """
-    Initialize get_candidate_chunk and cache it on disk.
+    Initialize get_cuboid and cache it on disk.
     """
     ct = get_ct(series_uid)
-    ct_chunk, pos_chunk, center_irc = ct.get_candidate_chunk(center_xyz, width_irc)
-    return ct_chunk, pos_chunk, center_irc
+    ct_chunk, mask_chunk, center_irc = ct.get_cuboid(center_xyz, width_irc)
+    return ct_chunk, mask_chunk, center_irc
 
 
 # cache the size of each CT scan and its positive inidices,
@@ -228,37 +223,22 @@ def get_ct_size_and_indices(series_uid):
     Returns number of slices and the entire list of positive indices and cache them in disk.
     """
     ct = get_ct(series_uid)
-    return int(ct.ct_a.shape[0]), ct.positive_indexes
+    return int(ct.ct_a.shape[0]), ct.positive_indices
 
 
-# Dataset for validation
+# Dataset for validation  TODO: merge with Training and pull out validation training split outside class
 class NoduleSegmentationDataset(Dataset):
     def __init__(self,
-                 val_stride=0,  # every how many series of full dataset we use them for validation
-                 is_val=None,  # validation mode
-                 series_uid=None,  # if we want samples only from a specific ct scan
+                 is_val=False,  # validation mode
+                 series_list=None,  # series from which to make the dataset
                  context_slices_count=3,  # number of extra slices on each side of the central one (treated as channels)
                  use_full_ct=False,  # whether to use all slices of ct scans or only the ones containing nodules
                  ):
 
+        self.is_val = is_val
         self.context_slices_count = context_slices_count
         self.use_full_ct = use_full_ct
-
-        # build series_list from a single ct scan or all ct scans in disk
-        if series_uid:
-            self.series_list = [series_uid]
-        else:
-            self.series_list = get_series_on_disk()
-
-        # if in validation mode, restrict list of series to just the validation subsector
-        if is_val:
-            assert val_stride > 0, val_stride
-            self.series_list = self.series_list[::val_stride]
-            assert self.series_list
-        # if in training mode, removes validation subsector from list so not to train the model with them
-        elif val_stride > 0:
-            del self.series_list[::val_stride]
-            assert self.series_list
+        self.series_list = series_list
 
         # list containing the slices to be used of the ct scans (all if use_full_ct, only positive if not)
         self.sample_list = []
@@ -281,12 +261,18 @@ class NoduleSegmentationDataset(Dataset):
             len(self.nodule_df)))
 
     def __len__(self):
-        return len(self.sample_list)
+        if self.is_val:  # length for validation
+            return len(self.sample_list)
+        else:  # length for training
+            repetitions = 500
+            return len(self.nodule_df) * repetitions  # more than actual length because of random crop and augmentation
 
-    def __getitem__(self, ndx):
-        series_uid, slice_ndx = self.sample_list[ndx % len(self.sample_list)]
-        return self.getitem_full_slice(series_uid, slice_ndx)  # TODO: why do we need to call another function?
-
+    def __getitem__(self, ndx):  # TODO: make a unified getitem with static functions
+        if self.is_val:
+            series_uid, slice_ndx = self.sample_list[ndx % len(self.sample_list)]
+            return self.getitem_full_slice(series_uid, slice_ndx)  # TODO: why do we need to call another function?
+        else:
+            pass  # TODO:...
     # TODO: Make this and getitem_trainingCrop below static functions by changing a few things.
     def getitem_full_slice(self, series_uid, slice_ndx):
         """
@@ -314,7 +300,7 @@ class NoduleSegmentationDataset(Dataset):
             ct_t[i] = torch.from_numpy(ct.ct_a[context_ndx].astype(np.float32))
 
         # build pos_t by picking the single slice_ndx of the positive mask (no extra context slices!)
-        pos_t = torch.from_numpy(ct.positive_mask[slice_ndx]).unsqueeze(0)
+        pos_t = torch.from_numpy(ct.mask[slice_ndx]).unsqueeze(0)
 
         return ct_t, pos_t, ct.series_uid, slice_ndx  # return inputs just for logging info later
 
@@ -330,7 +316,7 @@ class TrainingNoduleSegmentationDataset(NoduleSegmentationDataset):
 
     def __len__(self):
         repetitions = 500
-        return len(self.nodule_df)*repetitions  # more than actual length because of random crop and augmentation
+        return len(self.nodule_df) * repetitions  # more than actual length because of random crop and augmentation
 
     def shuffle_samples(self):
         # before shuffling the lists are sorted by diameter
@@ -353,7 +339,7 @@ class TrainingNoduleSegmentationDataset(NoduleSegmentationDataset):
         """
         # chunk of 7 slides of size 96x96 each
         center_xyz = (nodule.coordX, nodule.coordY, nodule.coordZ)
-        ct_a, pos_a, center_irc = get_ct_candidate_chunk(nodule.seriesuid, center_xyz, (7, 96, 96))
+        ct_a, pos_a, center_irc = get_ct_cuboid(nodule.seriesuid, center_xyz, (7, 96, 96))
         pos_a = pos_a[3:4]  # pick center slice of positive mask
 
         # picks random 64x64 crop inside original 96x96
