@@ -49,15 +49,22 @@ def show_full_ct(ct_a, slice_ndx=None, fig_size=(20, 50)):
 #    plt.imshow(ct_slice_mask, clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
 
 
-def show_slices(ct_a, mask, indices, columns=2, fig_size=(20, 40)):
+def show_slices(ct_a, mask, indices, columns=1, fig_size=(20, 40)):
 
     clim_ct = (-1000.0, 1000)
     cmap_ct = 'gray'
     clim_mask = (0, 1)
-
-    rows = int(np.ceil(len(indices) / columns))
     cmap_mask = ListedColormap(['black', 'red'], N=2)
 
+    # distinguish single slice case
+    if type(indices) == int or len(indices) == 1:
+
+        plt.figure(figsize=fig_size)
+        plt.imshow(ct_a, clim=clim_ct, cmap=cmap_ct)
+        plt.imshow(mask, clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
+        return
+
+    rows = int(np.ceil(len(indices) / columns))
     fig, axes = plt.subplots(rows, columns, figsize=fig_size)
 
     for i in range(rows):

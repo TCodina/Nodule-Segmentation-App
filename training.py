@@ -7,12 +7,12 @@ import torch.optim
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 
-from dataset import NoduleSegmentationDataset, TrainingNoduleSegmentationDataset
+from dataset import NoduleSegmentationDataset, get_series_on_disk
 from model import UNetWrapper, SegmentationAugmentation
 
 
 class TrainingApp:
-    def __init__(self, num_workers=2, batch_size=8, epochs=10, augmentation_dict=None):
+    def __init__(self, num_workers=2, batch_size=8, epochs=10, augmentation_dict=None, trn_val_rate=0.9):
 
         self.num_workers = num_workers
         self.batch_size = batch_size
@@ -40,7 +40,7 @@ class TrainingApp:
         self.augment = SegmentationAugmentation(**self.augmentation_dict).to(self.device)
         self.optimizer = Adam(self.model.parameters())
         self.validation_cadence = 2  # epoch frequency of test again validation set
-
+        self.trn_val_rate = trn_val_rate
         self.metric_history = {'trn_loss': [],
                                'val_loss': []}
 
@@ -50,44 +50,47 @@ class TrainingApp:
         validation metrics, and display the results.
         """
 
+        loader_train, loader_val = self.init_dataloader()
+
         print("Starting training")
-
-        trn_dl = self.init_dataloader(is_val=False)
-        val_dl = self.init_dataloader(is_val=True)
-
-        best_score = 0.0  # to keep track of best score during epochs
-
         for epoch_ndx in range(1, self.epochs + 1):
-            print(f"Epoch {epoch_ndx} of {self.epochs}, {len(trn_dl)}/{len(val_dl)} batches (trn/val)"
+            print(f"Epoch {epoch_ndx} of {self.epochs}, {len(loader_train)}/{len(loader_val)} batches (trn/val)"
                   f" of size {self.batch_size}")
 
-            self.train(epoch_ndx, trn_dl)  # train and store training loss for a single epoch
+            self.train(epoch_ndx, loader_train)  # train and store training loss for a single epoch
 
             # validation and logging every validation_cadence epochs
             if epoch_ndx == 1 or epoch_ndx % self.validation_cadence == 0:
-                self.validate(epoch_ndx, val_dl)
+                self.validate(epoch_ndx, loader_val)
                 self.save_model(epoch_ndx)
 
-    def init_dataloader(self, is_val):
+    def init_dataloader(self):
         """
         Initialize dataloader for training or validation set
 
         :param isValSet_bool: determines whether to use training or validation set
         :return: dataloader
         """
-        if is_val:
-            dataset = NoduleSegmentationDataset(val_stride=10, is_val=True, context_slices_count=3)
-        else:
-            dataset = TrainingNoduleSegmentationDataset(val_stride=10, is_val=False, context_slices_count=3)
-
-        dataloader = DataLoader(
-            dataset,
+        series_list = get_series_on_disk()
+        trn_num = round(len(series_list) * self.trn_val_rate)
+        series_train = series_list[:trn_num]
+        series_val = series_list[trn_num:]
+        dataset_train = NoduleSegmentationDataset(series_train, is_val=False)
+        dataset_val = NoduleSegmentationDataset(series_val, is_val=True)
+        loader_train = DataLoader(
+            dataset_train,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            pin_memory=self.use_cuda,
+        )
+        loader_val = DataLoader(
+            dataset_val,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
             pin_memory=self.use_cuda,
         )
 
-        return dataloader
+        return loader_train, loader_val
 
     def train(self, epoch_ndx, trn_dl):
         """
@@ -103,7 +106,7 @@ class TrainingApp:
         """
 
         self.model.train()
-        trn_dl.dataset.shuffle_samples()
+        trn_dl.dataset.shuffle_samples()  # TODO add this in the dataloader
 
         loss_epoch = 0  # for accumulated training loss along entire epoch
         print(f"Starting training at E{epoch_ndx} ----/{len(trn_dl)}")
@@ -164,11 +167,11 @@ class TrainingApp:
         chunk, mask, series_list, slice_ndx_list = batch_tup
         chunk = chunk.to(self.device, non_blocking=True)
         mask = mask.to(self.device, non_blocking=True)
-        # if training mode, apply transformations over input and label (mask)
+        # if training mode, apply transformations over input and label (mask)  #TODO: this should be in the Dataset class
         if self.model.training:
             chunk, mask = self.augment(chunk, mask)
         # output of model
-        prediction = self.model(chunk)
+        prediction = self.model(chunk)  # TODO: this should be outside the compute loss function!
         # calculate dice loss
         all_loss = dice_loss(prediction, mask)  # for all training samples
         fn_loss = dice_loss(prediction * mask, mask)  # only for pixels included in label (false negatives)

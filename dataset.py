@@ -95,7 +95,7 @@ class Ct:
         This annotation-mask is used as the ground truth for segmentation.
 
         Args:
-            nodules_pd:
+            nodules_df:
             threshold_hu (int): Minimal value (~ density) from which we consider a pixel inside bounding box
                                 to be part of a nodule.
 
@@ -226,11 +226,12 @@ def get_ct_size_and_indices(series_uid):
     return int(ct.ct_a.shape[0]), ct.positive_indices
 
 
-# Dataset for validation  TODO: merge with Training and pull out validation training split outside class
+# Dataset for validation
+# TODO: maybe try first using the same getitem for training and testing, what would be the problem with that?
 class NoduleSegmentationDataset(Dataset):
     def __init__(self,
-                 is_val=False,  # validation mode
                  series_list=None,  # series from which to make the dataset
+                 is_val=False,  # validation mode
                  context_slices_count=3,  # number of extra slices on each side of the central one (treated as channels)
                  use_full_ct=False,  # whether to use all slices of ct scans or only the ones containing nodules
                  ):
@@ -265,151 +266,70 @@ class NoduleSegmentationDataset(Dataset):
             return len(self.sample_list)
         else:  # length for training
             repetitions = 500
-            return len(self.nodule_df) * repetitions  # more than actual length because of random crop and augmentation
-
-    def __getitem__(self, ndx):  # TODO: make a unified getitem with static functions
-        if self.is_val:
-            series_uid, slice_ndx = self.sample_list[ndx % len(self.sample_list)]
-            return self.getitem_full_slice(series_uid, slice_ndx)  # TODO: why do we need to call another function?
-        else:
-            pass  # TODO:...
-    # TODO: Make this and getitem_trainingCrop below static functions by changing a few things.
-    def getitem_full_slice(self, series_uid, slice_ndx):
-        """
-        Get full slices of a given CT scan as 3D Torch tensors where the first dimension is the number of "channels".
-        These channels are the slice indices, being slice_ndx the slice in the center and having context_slices_count
-        number of extra slices on each side.
-
-        Args:
-            series_uid: the CT scan we want
-            slice_ndx: the slice we want of the CT scan.
-
-        Return:
-            ct_t (3D torch.Tensor): contain the full slices with slice_ndx as the central channel.
-            post_t (3D torch.Tensor): contain a single slice (slice_ndx) of positive mask
-        """
-
-        # initialize and build ct_t by piking the relevant slices from the ct scan
-        ct = get_ct(series_uid)  # cached
-        ct_t = torch.zeros((self.context_slices_count * 2 + 1, 512, 512))
-        start_ndx = slice_ndx - self.context_slices_count
-        end_ndx = slice_ndx + self.context_slices_count + 1
-        for i, context_ndx in enumerate(range(start_ndx, end_ndx)):
-            context_ndx = max(context_ndx, 0)
-            context_ndx = min(context_ndx, ct.ct_a.shape[0] - 1)
-            ct_t[i] = torch.from_numpy(ct.ct_a[context_ndx].astype(np.float32))
-
-        # build pos_t by picking the single slice_ndx of the positive mask (no extra context slices!)
-        pos_t = torch.from_numpy(ct.mask[slice_ndx]).unsqueeze(0)
-
-        return ct_t, pos_t, ct.series_uid, slice_ndx  # return inputs just for logging info later
-
-
-# TODO: merge these two dataset classes by writing the getitem functions static and split the very few steps they have
-# TODO: different with conditionals (by doing it will be much more easy to understand!)
-# Dataset for training (subclassing the validation dataset)
-class TrainingNoduleSegmentationDataset(NoduleSegmentationDataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.ratio_int = 2  # TODO: what is this?
-
-    def __len__(self):
-        repetitions = 500
-        return len(self.nodule_df) * repetitions  # more than actual length because of random crop and augmentation
-
-    def shuffle_samples(self):
-        # before shuffling the lists are sorted by diameter
-        self.nodule_df = self.nodule_df.sample(frac=1)
-
-    def __getitem__(self, ndx):  # overwrite getitem of validation dataset class
-        nodule = self.nodule_df.iloc[ndx % len(self.nodule_df)]
-        return self.getitem_training_crop(nodule)
-
-    def getitem_training_crop(self, nodule):  # TODO: make static
-        """
-        Get pseudo-random 7x64x64 crop of entire ct scan around candidate's center
-
-        Args:
-            candidateInfo_tup (NamedTuple):
-
-        Return:
-             ct_t (torch.Tensor): 7x64x64 chunk around candidate's center
-             pos_t (torch.Tensor): 1x64x64 chunk of mask (boolean values denoting nodule vs non-nodule)
-        """
-        # chunk of 7 slides of size 96x96 each
-        center_xyz = (nodule.coordX, nodule.coordY, nodule.coordZ)
-        ct_a, pos_a, center_irc = get_ct_cuboid(nodule.seriesuid, center_xyz, (7, 96, 96))
-        pos_a = pos_a[3:4]  # pick center slice of positive mask
-
-        # picks random 64x64 crop inside original 96x96
-        row_offset = random.randrange(0, 32)
-        col_offset = random.randrange(0, 32)
-        ct_t = torch.from_numpy(ct_a[:, row_offset:row_offset + 64, col_offset:col_offset + 64]).to(torch.float32)
-        pos_t = torch.from_numpy(pos_a[:, row_offset:row_offset + 64, col_offset:col_offset + 64]).to(torch.long)
-
-        slice_ndx = center_irc.index
-
-        return ct_t, pos_t, nodule.seriesuid, slice_ndx
-
-
-# TODO: KG UNDERSTAND THIS
-class PrepcacheLunaDataset(Dataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.candidateInfo_list = getCandidateInfoList()
-        self.pos_list = [nt for nt in self.candidateInfo_list if nt.isNodule_bool]
-
-        self.seen_set = set()
-        self.candidateInfo_list.sort(key=lambda x: x.series_uid)
-
-    def __len__(self):
-        return len(self.candidateInfo_list)
+            return len(self.nodule_df) * repetitions  # more than actual length because of augmentation
 
     def __getitem__(self, ndx):
-        # candidate_t, pos_t, series_uid, center_t = super().__getitem__(ndx)
-
-        candidateInfo_tup = self.candidateInfo_list[ndx]
-        getCtRawCandidate(candidateInfo_tup.series_uid, candidateInfo_tup.center_xyz, (7, 96, 96))
-
-        series_uid = candidateInfo_tup.series_uid
-        if series_uid not in self.seen_set:
-            self.seen_set.add(series_uid)
-
-            getCtSampleSize(series_uid)
-            # ct = getCt(series_uid)
-            # for mask_ndx in ct.positive_indexes:
-            #     build2dLungMask(series_uid, mask_ndx)
-
-        return 0, 1  # candidate_t, pos_t, series_uid, center_t
-
-
-class TvTrainingLuna2dSegmentationDataset(torch.utils.data.Dataset):
-    def __init__(self, isValSet_bool=False, val_stride=10, contextSlices_count=3):
-        assert contextSlices_count == 3
-        data = torch.load('./imgs_and_masks.pt')
-        suids = list(set(data['suids']))
-        trn_mask_suids = torch.arange(len(suids)) % val_stride < (val_stride - 1)
-        trn_suids = {s for i, s in zip(trn_mask_suids, suids) if i}
-        trn_mask = torch.tensor([(s in trn_suids) for s in data["suids"]])
-        if not isValSet_bool:
-            self.imgs = data["imgs"][trn_mask]
-            self.masks = data["masks"][trn_mask]
-            self.suids = [s for s, i in zip(data["suids"], trn_mask) if i]
+        if self.is_val:
+            series_uid, slice_ndx = self.sample_list[ndx % len(self.sample_list)]
+            return getitem_full(series_uid, slice_ndx, self.context_slices_count)
         else:
-            self.imgs = data["imgs"][~trn_mask]
-            self.masks = data["masks"][~trn_mask]
-            self.suids = [s for s, i in zip(data["suids"], trn_mask) if not i]
-        # discard spurious hotspots and clamp bone
-        self.imgs.clamp_(-1000, 1000)
-        self.imgs /= 1000
+            nodule = self.nodule_df.iloc[ndx % len(self.nodule_df)]
+            return getitem_crop(nodule)
 
-    def __len__(self):
-        return len(self.imgs)
 
-    def __getitem__(self, i):
-        oh, ow = torch.randint(0, 32, (2,))
-        sl = self.masks.size(1) // 2
-        return self.imgs[i, :, oh: oh + 64, ow: ow + 64], 1, self.masks[i, sl: sl + 1, oh: oh + 64, ow: ow + 64].to(
-            torch.float32), self.suids[i], 9999
+def getitem_full(series_uid, slice_ndx, context_slices_count):
+    """
+    Get full slices of a given CT scan as 3D Torch tensors where the first dimension is the number of "channels".
+    These channels are the slice indices, being slice_ndx the slice in the center and having context_slices_count
+    number of extra slices on each side.
+
+    Args:
+        series_uid: the CT scan we want
+        slice_ndx: the slice we want of the CT scan.
+
+    Return:
+        ct_t (3D torch.Tensor): contain the full slices with slice_ndx as the central channel.
+        post_t (3D torch.Tensor): contain a single slice (slice_ndx) of positive mask
+    """
+
+    # initialize and build ct_t by piking the relevant slices from the ct scan
+    ct = get_ct(series_uid)  # cached
+    ct_t = torch.zeros((context_slices_count * 2 + 1, 512, 512))
+    start_ndx = slice_ndx - context_slices_count
+    end_ndx = slice_ndx + context_slices_count + 1
+    for i, context_ndx in enumerate(range(start_ndx, end_ndx)):
+        context_ndx = max(context_ndx, 0)
+        context_ndx = min(context_ndx, ct.ct_a.shape[0] - 1)
+        ct_t[i] = torch.from_numpy(ct.ct_a[context_ndx].astype(np.float32))
+
+    # build mask_t by picking the single slice_ndx of the positive mask (no extra context slices!)
+    mask_t = torch.from_numpy(ct.mask[slice_ndx]).unsqueeze(0)
+
+    return ct_t, mask_t, ct.series_uid, slice_ndx  # return inputs just for logging info later
+
+
+def getitem_crop(nodule):
+    """
+    Get pseudo-random 7x64x64 crop of entire ct scan around candidate's center
+
+    Args:
+        candidateInfo_tup (NamedTuple):
+
+    Return:
+         ct_t (torch.Tensor): 7x64x64 chunk around candidate's center
+         pos_t (torch.Tensor): 1x64x64 chunk of mask (boolean values denoting nodule vs non-nodule)
+    """
+    # chunk of 7 slides of size 96x96 each
+    center_xyz = (nodule.coordX, nodule.coordY, nodule.coordZ)
+    ct_a, mask_a, center_irc = get_ct_cuboid(nodule.seriesuid, center_xyz, (7, 96, 96))
+    mask_a = mask_a[3:4]  # pick center slice of positive mask
+
+    # picks random 64x64 crop inside original 96x96  # TODO: random crop and tensor can be made into a transform object!
+    row_offset = random.randrange(0, 32)
+    col_offset = random.randrange(0, 32)
+    ct_t = torch.from_numpy(ct_a[:, row_offset:row_offset + 64, col_offset:col_offset + 64]).to(torch.float32)
+    mask_t = torch.from_numpy(mask_a[:, row_offset:row_offset + 64, col_offset:col_offset + 64]).to(torch.long)
+
+    slice_ndx = center_irc.index
+
+    return ct_t, mask_t, nodule.seriesuid, slice_ndx
