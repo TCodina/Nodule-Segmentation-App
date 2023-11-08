@@ -1,14 +1,15 @@
 import datetime
 import os
 
-import numpy as np
 import torch
 import torch.optim
 from torch.optim import Adam
 from torch.utils.data import DataLoader
+from torchvision import transforms
 
 from dataset import NoduleSegmentationDataset, get_series_on_disk
 from model import UNetWrapper, SegmentationAugmentation
+from transformations import ToTensor, RandomCrop
 
 
 class TrainingApp:
@@ -16,19 +17,9 @@ class TrainingApp:
 
         self.num_workers = num_workers
         self.batch_size = batch_size
-        self.epochs = epochs
-        if augmentation_dict is None:
-            self.augmentation_dict = {'flip': True,
-                                      'offset': 0.03,
-                                      'scale': 0.2,
-                                      'rotate': True,
-                                      'noise': 25.0}
-        else:
-            self.augmentation_dict = augmentation_dict
-
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
-
+        self.epochs = epochs
         # initialize model and optimizer
         self.model = UNetWrapper(in_channels=7,
                                  n_classes=1,
@@ -37,12 +28,23 @@ class TrainingApp:
                                  padding=True,
                                  batch_norm=True,
                                  up_mode='upconv').to(self.device)
-        self.augment = SegmentationAugmentation(**self.augmentation_dict).to(self.device)
         self.optimizer = Adam(self.model.parameters())
         self.validation_cadence = 2  # epoch frequency of test again validation set
         self.trn_val_rate = trn_val_rate
-        self.metric_history = {'trn_loss': [],
-                               'val_loss': []}
+        self.metric_history = {'trn_loss': [], 'val_loss': []}
+
+        # TODO: organize better these transformations
+        if augmentation_dict is None:
+            self.augmentation_dict = {'flip': True,
+                                      'offset': 0.03,
+                                      'scale': 0.2,
+                                      'rotate': True,
+                                      'noise': 25.0}
+        else:
+            self.augmentation_dict = augmentation_dict
+        self.augment = SegmentationAugmentation(**self.augmentation_dict).to(self.device)
+        self.transform_trn = transforms.Compose([RandomCrop(), ToTensor()])
+        self.transform_val = transforms.Compose([ToTensor()])
 
     def main(self):
         """

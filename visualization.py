@@ -35,20 +35,6 @@ def show_full_ct(ct_a, slice_ndx=None, fig_size=(20, 50)):
     ax3.set_title(f'col {cc}')
 
 
-#def showSliceWithMask(ct_slice, ct_slice_mask, slice_ndx, fig_size=(5, 10)):
-#
-#    clim_ct = (-1000.0, 1000)
-#    cmap_ct = 'gray'
-#
-#    clim_mask = (0, 1)
-#    cmap_mask = ListedColormap(['black', 'red'], N=2)
-#
-#    plt.figure(figsize=fig_size)
-#    plt.title(f"slice {slice_ndx}")
-#    plt.imshow(ct_slice, clim=clim_ct, cmap=cmap_ct)
-#    plt.imshow(ct_slice_mask, clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
-
-
 def show_slices(ct_a, mask, indices, columns=1, fig_size=(20, 40)):
 
     clim_ct = (-1000.0, 1000)

@@ -47,7 +47,7 @@ class UNetWrapper(nn.Module):
 
 
 # Take input (tensor) and label (mask) and apply transformations to them to get augmented data.
-# TODO: why is this inside this file and as a subclass of Module?
+# TODO: Move this to transformations file
 class SegmentationAugmentation(nn.Module):
     def __init__(self, flip=None, offset=None, scale=None, rotate=None, noise=None):
         super().__init__()
