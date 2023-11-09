@@ -66,6 +66,31 @@ def show_slices(ct_a, mask, indices, columns=1, fig_size=(20, 40)):
     fig.tight_layout()
 
 
+def show_batch(batch, fig_size=(20, 50)):
+    """
+    Plot candidate chunk together with its mask and center.
+
+    Args:
+        cand_chunk (numpy.array):
+        cand_mask (numpy.array):
+        slice_ndx (int):
+        slices (int): number of slices to plot (default to all indices in chunk)
+        fig_size (tuple):
+    """
+    ct_batch, mask_batch = batch
+    fig, ax = plt.subplots(1, len(ct_batch), figsize=fig_size)
+
+    clim_ct = (-1000.0, 1000)
+    cmap_ct = 'gray'
+
+    clim_mask = (0, 1)
+    cmap_mask = ListedColormap(['black', 'red'], N=2)
+
+    for i in range(len(ct_batch)):
+        ax[i].imshow(ct_batch[i, 3], clim=clim_ct, cmap=cmap_ct)
+        ax[i].imshow(mask_batch[i, 0], clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
+
+
 def show_nodule(cand_chunk, slice_ndx, cand_mask=None, slices=None, fig_size=(20, 50)):
     """
     Plot candidate chunk together with its mask and center.

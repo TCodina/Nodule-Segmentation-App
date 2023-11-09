@@ -14,17 +14,10 @@ Classes:
 """
 
 import pandas as pd
-import functools
 import glob
 import os
-import random
-
-from collections import namedtuple
 import SimpleITK as sitk  # parser to go from MetaIO format to NumPy arrays
-
 import numpy as np
-import torch
-import torch.cuda
 from torch.utils.data import Dataset
 
 from util.disk import get_cache  # local function for caching
@@ -33,7 +26,7 @@ from util.util import XyzTuple, xyz2irc
 data_dir = './../data/'  # directory where data files are stored
 # data_dir = "/content/drive/MyDrive/LUNA_data_set/"
 
-cache_data = get_cache('./../cache_data')  # get cache form this location
+#cache_data = get_cache('./../cache_data')  # get cache form this location
 
 
 def get_series_on_disk():
@@ -42,7 +35,7 @@ def get_series_on_disk():
     return series_on_disk
 
 
-@functools.lru_cache(1)  # to cache on disk
+#@functools.lru_cache(1)  # to cache on disk
 def get_nodule_dataframe():
     series_on_disk = get_series_on_disk()
     nodule_df = pd.read_csv(data_dir + '/annotations.csv')
@@ -196,7 +189,7 @@ class Ct:
         return ct_chunk, mask_chunk, center_irc
 
 
-@functools.lru_cache(1, typed=True)  # cache on disk 1 ct scan at a time
+#@functools.lru_cache(1, typed=True)  # cache on disk 1 ct scan at a time
 def get_ct(series_uid):
     """
     Initialize an instance of the Ct class and cache it on disk.
@@ -205,7 +198,7 @@ def get_ct(series_uid):
 
 
 # cache on disk differently, if this cache is commented, the caching does not happen  at all! TODO: explain this
-@cache_data.memoize(typed=True)
+#@cache_data.memoize(typed=True)
 def get_ct_cuboid(series_uid, center_xyz, width_irc):
     """
     Initialize get_cuboid and cache it on disk.
@@ -217,7 +210,7 @@ def get_ct_cuboid(series_uid, center_xyz, width_irc):
 
 # cache the size of each CT scan and its positive inidices,
 # so not to load the whole scan every time we need its size only
-@cache_data.memoize(typed=True)
+#@cache_data.memoize(typed=True)
 def get_ct_size_and_indices(series_uid):
     """
     Returns number of slices and the entire list of positive indices and cache them in disk.
@@ -226,14 +219,13 @@ def get_ct_size_and_indices(series_uid):
     return int(ct.ct_a.shape[0]), ct.positive_indices
 
 
-# Dataset for validation
+# Dataset
 # TODO: maybe try first using the same getitem for training and testing, what would be the problem with that?
 class NoduleSegmentationDataset(Dataset):
     def __init__(self,
                  series_list=None,  # series from which to make the dataset
                  is_val=False,  # validation mode
-                 transform_train = None,
-                 transform_val = None,
+                 transform=None,
                  context_slices_count=3,  # number of extra slices on each side of the central one (treated as channels)
                  use_full_ct=False,  # whether to use all slices of ct scans or only the ones containing nodules
                  ):
@@ -242,8 +234,7 @@ class NoduleSegmentationDataset(Dataset):
         self.context_slices_count = context_slices_count
         self.use_full_ct = use_full_ct
         self.series_list = series_list
-        self.transform_train = transform_train
-        self.transform_val = transform_val
+        self.transform = transform
 
         # list containing the slices to be used of the ct scans (all if use_full_ct, only positive if not)
         self.sample_list = []
@@ -269,8 +260,7 @@ class NoduleSegmentationDataset(Dataset):
         if self.is_val:  # length for validation
             return len(self.sample_list)
         else:  # length for training
-            repetitions = 500
-            return len(self.nodule_df) * repetitions  # more than actual length because of augmentation
+            return len(self.nodule_df)  # more than actual length because of augmentation
 
     def __getitem__(self, ndx):
         if self.is_val:
@@ -284,10 +274,10 @@ class NoduleSegmentationDataset(Dataset):
             end_ndx = min(ct.ct_a.shape[0], slice_ndx + self.context_slices_count + 1)
             ct_slices = ct.ct_a[start_ndx:end_ndx]
             # build mask_t by picking the single slice_ndx of the positive mask (no extra context slices!)
-            mask_slice = np.expand_dims(ct.mask[slice_ndx], 0)
+            mask_slice = ct.mask[slice_ndx: slice_ndx + 1]
             # transform
-            if self.transform_val:
-                ct_slices, mask_slice = self.transform_val(ct_slices, mask_slice)
+            if self.transform:
+                ct_slices, mask_slice = self.transform(ct_slices, mask_slice)
 
             return ct_slices, mask_slice
 
@@ -298,19 +288,7 @@ class NoduleSegmentationDataset(Dataset):
             center_xyz = (nodule.coordX, nodule.coordY, nodule.coordZ)
             ct_cub, mask_cub, center_irc = get_ct_cuboid(nodule.seriesuid, center_xyz, (7, 96, 96))
             mask_slice = mask_cub[3:4]  # pick center slice of positive mask
-            # transform
-            if self.transform_train:
-                ct_cub, mask_slice = self.transform_train(ct_cub, mask_slice)
+            if self.transform:  # transform
+                ct_cub, mask_slice = self.transform(ct_cub, mask_slice)
 
             return ct_cub, mask_slice
-
-            # TODO: remove all this
-            # # picks random 64x64 crop inside original 96x96
-            # row_offset = random.randrange(0, 32)
-            # col_offset = random.randrange(0, 32)
-            # ct_t = torch.from_numpy(ct_a[:, row_offset:row_offset + 64, col_offset:col_offset + 64]).to(torch.float32)
-            # mask_t = torch.from_numpy(mask_a[:, row_offset:row_offset + 64, col_offset:col_offset + 64]).to(torch.long)
-            #
-            # slice_ndx = center_irc.index
-            #
-            # return ct_t, mask_t, nodule.seriesuid, slice_ndx

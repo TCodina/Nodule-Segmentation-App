@@ -5,15 +5,24 @@ import torch
 import torch.optim
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision import transforms
 
-from dataset import NoduleSegmentationDataset, get_series_on_disk
-from model import UNetWrapper, SegmentationAugmentation
-from transformations import ToTensor, RandomCrop
+from dataset import NoduleSegmentationDataset
+from model import UNetWrapper
+from transformations import TransformationTrain, TransformationValidation
+
+augmentation_dict_old = {'flip': True, 'offset': 0.03, 'scale': 0.2, 'rotate': True, 'noise': 25.0}
 
 
 class TrainingApp:
-    def __init__(self, num_workers=2, batch_size=8, epochs=10, augmentation_dict=None, trn_val_rate=0.9):
+    def __init__(self,
+                 series_trn,
+                 series_val,
+                 num_workers=2,
+                 batch_size=8,
+                 epochs=10):
+
+        self.series_trn = series_trn
+        self.series_val = series_val
 
         self.num_workers = num_workers
         self.batch_size = batch_size
@@ -21,30 +30,15 @@ class TrainingApp:
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         self.epochs = epochs
         # initialize model and optimizer
-        self.model = UNetWrapper(in_channels=7,
-                                 n_classes=1,
-                                 depth=3,
-                                 wf=4,
-                                 padding=True,
-                                 batch_norm=True,
-                                 up_mode='upconv').to(self.device)
+        self.model = UNetWrapper(in_channels=7, n_classes=1, depth=3, wf=4,
+                                 padding=True, batch_norm=True, up_mode='upconv').to(self.device)
         self.optimizer = Adam(self.model.parameters())
         self.validation_cadence = 2  # epoch frequency of test again validation set
-        self.trn_val_rate = trn_val_rate
-        self.metric_history = {'trn_loss': [], 'val_loss': []}
 
-        # TODO: organize better these transformations
-        if augmentation_dict is None:
-            self.augmentation_dict = {'flip': True,
-                                      'offset': 0.03,
-                                      'scale': 0.2,
-                                      'rotate': True,
-                                      'noise': 25.0}
-        else:
-            self.augmentation_dict = augmentation_dict
-        self.augment = SegmentationAugmentation(**self.augmentation_dict).to(self.device)
-        self.transform_trn = transforms.Compose([RandomCrop(), ToTensor()])
-        self.transform_val = transforms.Compose([ToTensor()])
+        self.metric_history = {'trn_loss': [], 'val_loss': []}
+        # instantiate transformations
+        self.transformation_trn = TransformationTrain()
+        self.transformation_val = TransformationValidation()
 
     def main(self):
         """
@@ -58,9 +52,8 @@ class TrainingApp:
         for epoch_ndx in range(1, self.epochs + 1):
             print(f"Epoch {epoch_ndx} of {self.epochs}, {len(loader_train)}/{len(loader_val)} batches (trn/val)"
                   f" of size {self.batch_size}")
-
-            self.train(epoch_ndx, loader_train)  # train and store training loss for a single epoch
-
+            # train and store training loss for a single epoch
+            self.train(epoch_ndx, loader_train)
             # validation and logging every validation_cadence epochs
             if epoch_ndx == 1 or epoch_ndx % self.validation_cadence == 0:
                 self.validate(epoch_ndx, loader_val)
@@ -73,26 +66,15 @@ class TrainingApp:
         :param isValSet_bool: determines whether to use training or validation set
         :return: dataloader
         """
-        series_list = get_series_on_disk()
-        trn_num = round(len(series_list) * self.trn_val_rate)
-        series_train = series_list[:trn_num]
-        series_val = series_list[trn_num:]
-        dataset_train = NoduleSegmentationDataset(series_train, is_val=False)
-        dataset_val = NoduleSegmentationDataset(series_val, is_val=True)
-        loader_train = DataLoader(
-            dataset_train,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.use_cuda,
-        )
-        loader_val = DataLoader(
-            dataset_val,
-            batch_size=self.batch_size,
-            num_workers=self.num_workers,
-            pin_memory=self.use_cuda,
-        )
 
-        return loader_train, loader_val
+        dataset_trn = NoduleSegmentationDataset(self.series_trn, is_val=False, transform=self.transformation_trn)
+        dataset_val = NoduleSegmentationDataset(self.series_val, is_val=True, transform=self.transformation_val)
+        loader_trn = DataLoader(dataset_trn, shuffle=True,
+                                batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=self.use_cuda)
+        loader_val = DataLoader(dataset_val, shuffle=False,
+                                batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=self.use_cuda)
+
+        return loader_trn, loader_val
 
     def train(self, epoch_ndx, trn_dl):
         """
@@ -108,8 +90,6 @@ class TrainingApp:
         """
 
         self.model.train()
-        trn_dl.dataset.shuffle_samples()  # TODO add this in the dataloader
-
         loss_epoch = 0  # for accumulated training loss along entire epoch
         print(f"Starting training at E{epoch_ndx} ----/{len(trn_dl)}")
         for batch_ndx, batch_tup in enumerate(trn_dl):
@@ -117,9 +97,16 @@ class TrainingApp:
                 print(f"E{epoch_ndx} {batch_ndx:-4}/{len(trn_dl)}")
 
             self.optimizer.zero_grad()
-
-            loss_batch = self.compute_loss(batch_tup)
+            # decomposed batch and send to device
+            chunk, mask = batch_tup
+            chunk = chunk.to(self.device, non_blocking=True)
+            mask = mask.to(self.device, non_blocking=True)
+            # output of model
+            prediction = self.model(chunk)
+            # compute loss and gradient
+            loss_batch = compute_loss(prediction, mask)
             loss_batch.backward()
+            # update epoch loss
             loss_epoch += loss_batch.item()
 
             self.optimizer.step()
@@ -149,7 +136,13 @@ class TrainingApp:
                 if (batch_ndx % (len(val_dl) // 10)) == 0 and batch_ndx != 0:
                     print(f"E{epoch_ndx} {batch_ndx:-4}/{len(val_dl)}")
 
-                loss_batch = self.compute_loss(batch_tup)
+                chunk, mask = batch_tup
+                chunk = chunk.to(self.device, non_blocking=True)
+                mask = mask.to(self.device, non_blocking=True)
+                # output of model
+                prediction = self.model(chunk)
+                # compute loss
+                loss_batch = compute_loss(prediction, mask)
                 loss_epoch += loss_batch.item()
 
             loss_epoch /= len(val_dl) * self.batch_size  # normalize by number of samples
@@ -157,28 +150,6 @@ class TrainingApp:
         print(f"Validation E{epoch_ndx} finished.")
         print(f'Validation loss: {loss_epoch}')
         self.metric_history['val_loss'].append(loss_epoch)  # store loss in metric dict
-
-    def compute_loss(self, batch_tup):
-        """
-        Compute the loss of a given batch
-        :param batch_tup:
-        :return: loss of given batch
-        """
-
-        # decomposed batch and send to device
-        chunk, mask, series_list, slice_ndx_list = batch_tup
-        chunk = chunk.to(self.device, non_blocking=True)
-        mask = mask.to(self.device, non_blocking=True)
-        # if training mode, apply transformations over input and label (mask)  #TODO: this should be in the Dataset class
-        if self.model.training:
-            chunk, mask = self.augment(chunk, mask)
-        # output of model
-        prediction = self.model(chunk)  # TODO: this should be outside the compute loss function!
-        # calculate dice loss
-        all_loss = dice_loss(prediction, mask)  # for all training samples
-        fn_loss = dice_loss(prediction * mask, mask)  # only for pixels included in label (false negatives)
-
-        return all_loss.mean() + fn_loss.mean() * 8  # false negatives with 8X weight
 
     def save_model(self, epoch_ndx):
         """
@@ -199,6 +170,17 @@ class TrainingApp:
         torch.save(state, file_path)
 
         print(f"Saved model params to {file_path}")
+
+
+def compute_loss(prediction, mask):
+    """
+    Compute the loss of a given batch using dice loss
+    """
+
+    all_loss = dice_loss(prediction, mask)  # for all training samples
+    fn_loss = dice_loss(prediction * mask, mask)  # only for pixels included in label (false negatives)
+
+    return all_loss.mean() + fn_loss.mean() * 8  # false negatives with 8X weight
 
 
 def dice_loss(prediction, label, epsilon=1):
