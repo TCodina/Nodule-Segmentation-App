@@ -14,6 +14,7 @@ Classes:
 """
 
 import pandas as pd
+import functools
 import glob
 import os
 import SimpleITK as sitk  # parser to go from MetaIO format to NumPy arrays
@@ -26,7 +27,7 @@ from util.util import XyzTuple, xyz2irc
 data_dir = './../data/'  # directory where data files are stored
 # data_dir = "/content/drive/MyDrive/LUNA_data_set/"
 
-#cache_data = get_cache('./../cache_data')  # get cache form this location
+cache_data = get_cache('./../cache_data')  # get cache form this location
 
 
 def get_series_on_disk():
@@ -35,7 +36,7 @@ def get_series_on_disk():
     return series_on_disk
 
 
-#@functools.lru_cache(1)  # to cache on disk
+@functools.lru_cache(1)  # to cache on disk
 def get_nodule_dataframe():
     series_on_disk = get_series_on_disk()
     nodule_df = pd.read_csv(data_dir + '/annotations.csv')
@@ -189,7 +190,7 @@ class Ct:
         return ct_chunk, mask_chunk, center_irc
 
 
-#@functools.lru_cache(1, typed=True)  # cache on disk 1 ct scan at a time
+@functools.lru_cache(1, typed=True)  # cache on disk 1 ct scan at a time
 def get_ct(series_uid):
     """
     Initialize an instance of the Ct class and cache it on disk.
@@ -198,7 +199,7 @@ def get_ct(series_uid):
 
 
 # cache on disk differently, if this cache is commented, the caching does not happen  at all! TODO: explain this
-#@cache_data.memoize(typed=True)
+@cache_data.memoize(typed=True)
 def get_ct_cuboid(series_uid, center_xyz, width_irc):
     """
     Initialize get_cuboid and cache it on disk.
@@ -210,7 +211,7 @@ def get_ct_cuboid(series_uid, center_xyz, width_irc):
 
 # cache the size of each CT scan and its positive inidices,
 # so not to load the whole scan every time we need its size only
-#@cache_data.memoize(typed=True)
+@cache_data.memoize(typed=True)
 def get_ct_size_and_indices(series_uid):
     """
     Returns number of slices and the entire list of positive indices and cache them in disk.

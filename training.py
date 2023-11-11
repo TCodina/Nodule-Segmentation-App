@@ -19,7 +19,8 @@ class TrainingApp:
                  series_val,
                  num_workers=2,
                  batch_size=8,
-                 epochs=10):
+                 epochs=10,
+                 validation_cadence=2):  # epoch frequency of test again validation set
 
         self.series_trn = series_trn
         self.series_val = series_val
@@ -33,7 +34,7 @@ class TrainingApp:
         self.model = UNetWrapper(in_channels=7, n_classes=1, depth=3, wf=4,
                                  padding=True, batch_norm=True, up_mode='upconv').to(self.device)
         self.optimizer = Adam(self.model.parameters())
-        self.validation_cadence = 2  # epoch frequency of test again validation set
+        self.validation_cadence = validation_cadence
 
         self.metric_history = {'trn_loss': [], 'val_loss': []}
         # instantiate transformations

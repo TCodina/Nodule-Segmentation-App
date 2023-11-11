@@ -91,6 +91,24 @@ def show_batch(batch, fig_size=(20, 50)):
         ax[i].imshow(mask_batch[i, 0], clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
 
 
+def show_data(ct, mask, fig_size=(20, 50)):
+    """
+    Plot the ct and mask chunks as they come out of the dataset class
+    """
+    n_slices = ct.shape[0]
+    fig, ax = plt.subplots(1, n_slices, figsize=fig_size)
+
+    clim_ct = (-1000.0, 1000)
+    cmap_ct = 'gray'
+    clim_mask = (0, 1)
+    cmap_mask = ListedColormap(['black', 'red'], N=2)
+
+    for i in range(n_slices):
+        ax[i].imshow(ct[i], clim=clim_ct, cmap=cmap_ct)
+
+    ax[n_slices//2].imshow(mask[0], clim=clim_mask, cmap=cmap_mask, alpha=0.3)  # overlap mask on top in red
+
+
 def show_nodule(cand_chunk, slice_ndx, cand_mask=None, slices=None, fig_size=(20, 50)):
     """
     Plot candidate chunk together with its mask and center.
