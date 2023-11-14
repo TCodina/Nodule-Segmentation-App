@@ -24,6 +24,7 @@ class Unet(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.mid_channels = mid_channels
+
         self.downs = nn.ModuleList()
         self.ups = nn.ModuleList()
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -34,4 +35,3 @@ class Unet(nn.Module):
             in_channels = n_ch
 
         # decoding part
-        

@@ -13,7 +13,7 @@ from transformations import TransformationTrain, TransformationValidation
 class TrainingApp:
     def __init__(self, series_trn, series_val,
                  num_workers=2, batch_size=8, epochs=10,
-                 validation_freq=None, training_freq=10):
+                 validation_freq=None, training_freq=2, save_path=''):
 
         self.series_trn = series_trn
         self.series_val = series_val
@@ -28,7 +28,7 @@ class TrainingApp:
                                  padding=True, batch_norm=True, up_mode='upconv').to(self.device)
         self.optimizer = Adam(self.model.parameters())
         if validation_freq is None:
-            self.validation_freq = self.epochs // 4
+            self.validation_freq = self.epochs // 10
         else:
             self.validation_freq = validation_freq
         self.training_freq = training_freq
@@ -38,6 +38,7 @@ class TrainingApp:
         # instantiate transformations
         self.transformation_trn = TransformationTrain()
         self.transformation_val = TransformationValidation()
+        self.save_path = save_path
 
     def main(self):
         """
@@ -184,7 +185,7 @@ class TrainingApp:
         If the latter is the best run so far, it creates a second file for it
         """
         time_str = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')  # timestamp to identify training runs
-        file_path = os.path.join('saved_models', f'{time_str}.state')
+        file_path = os.path.join(self.save_path + 'saved_models', f'{time_str}.state')
         os.makedirs(os.path.dirname(file_path), mode=0o755, exist_ok=True)
         state = {
             'time': str(datetime.datetime.now()),
