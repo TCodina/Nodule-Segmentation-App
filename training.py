@@ -44,7 +44,7 @@ class TrainingApp:
         Here is where the magic happens. It trains the model for all epochs, store the training and
         validation metrics, and display the results.
         """
-
+        print("Loading data...")
         loader_train, loader_val = self.init_dataloader()
 
         print(f"\nStart training with {len(loader_train)}/{len(loader_val)} batches (trn/val) "
