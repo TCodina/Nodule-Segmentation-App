@@ -1,6 +1,5 @@
 import datetime
 import os
-
 import torch
 import torch.optim
 from torch.optim import Adam
@@ -10,17 +9,10 @@ from dataset import NoduleSegmentationDataset
 from model import UNetWrapper
 from transformations import TransformationTrain, TransformationValidation
 
-augmentation_dict_old = {'flip': True, 'offset': 0.03, 'scale': 0.2, 'rotate': True, 'noise': 25.0}
-
 
 class TrainingApp:
-    def __init__(self,
-                 series_trn,
-                 series_val,
-                 num_workers=2,
-                 batch_size=8,
-                 epochs=10,
-                 validation_cadence=2):  # epoch frequency of test again validation set
+    def __init__(self, series_trn, series_val,
+                 num_workers=2, batch_size=8, epochs=10, validation_freq=2):
 
         self.series_trn = series_trn
         self.series_val = series_val
@@ -34,9 +26,10 @@ class TrainingApp:
         self.model = UNetWrapper(in_channels=7, n_classes=1, depth=3, wf=4,
                                  padding=True, batch_norm=True, up_mode='upconv').to(self.device)
         self.optimizer = Adam(self.model.parameters())
-        self.validation_cadence = validation_cadence
-
-        self.metric_history = {'trn_loss': [], 'val_loss': []}
+        self.validation_freq = validation_freq  # epoch frequency of test again validation set
+        # keep track of epoch loss
+        self.metrics_dict = {'loss_trn': [], 'recall_trn': [], 'precision_trn': [], 'f1_trn': [],
+                             'loss_val': [], 'recall_val': [], 'precision_val': [], 'f1_val': []}
         # instantiate transformations
         self.transformation_trn = TransformationTrain()
         self.transformation_val = TransformationValidation()
@@ -49,14 +42,13 @@ class TrainingApp:
 
         loader_train, loader_val = self.init_dataloader()
 
-        print("Starting training")
+        print(f"\nStart training with {len(loader_train)}/{len(loader_val)} batches (trn/val) "
+              f"of size {self.batch_size}\n")
         for epoch_ndx in range(1, self.epochs + 1):
-            print(f"Epoch {epoch_ndx} of {self.epochs}, {len(loader_train)}/{len(loader_val)} batches (trn/val)"
-                  f" of size {self.batch_size}")
             # train and store training loss for a single epoch
             self.train(epoch_ndx, loader_train)
-            # validation and logging every validation_cadence epochs
-            if epoch_ndx == 1 or epoch_ndx % self.validation_cadence == 0:
+            # validation and logging every validation_freq epochs and at the beginning and end
+            if epoch_ndx == 1 or epoch_ndx % self.validation_freq == 0 or epoch_ndx == self.epochs:
                 self.validate(epoch_ndx, loader_val)
                 self.save_model(epoch_ndx)
 
@@ -89,14 +81,13 @@ class TrainingApp:
         :param trn_dl:
         :return: training metric
         """
-
+        print(f"Training E{epoch_ndx}")
         self.model.train()
-        loss_epoch = 0  # for accumulated training loss along entire epoch
-        print(f"Starting training at E{epoch_ndx} ----/{len(trn_dl)}")
+        loss_epoch = 0  # accumulated loss during training
+        recall_epoch = 0  # accumulated recall
+        precision_epoch = 0  # accumulated precision
+        f1_epoch = 0  # accumulated f1 score
         for batch_ndx, batch_tup in enumerate(trn_dl):
-            if (batch_ndx % (len(trn_dl) // 10)) == 0 and batch_ndx != 0:
-                print(f"E{epoch_ndx} {batch_ndx:-4}/{len(trn_dl)}")
-
             self.optimizer.zero_grad()
             # decomposed batch and send to device
             chunk, mask = batch_tup
@@ -104,19 +95,36 @@ class TrainingApp:
             mask = mask.to(self.device, non_blocking=True)
             # output of model
             prediction = self.model(chunk)
-            # compute loss and gradient
+            # compute loss
             loss_batch = compute_loss(prediction, mask)
+            # compute gradient
             loss_batch.backward()
-            # update epoch loss
-            loss_epoch += loss_batch.item()
-
+            # update parameters
             self.optimizer.step()
 
-        loss_epoch /= len(trn_dl) * self.batch_size  # normalize by number of samples
+            with torch.no_grad():
+                # update epoch loss
+                loss_epoch += loss_batch.item()
+                # compute batch metrics
+                recall_batch, precision_batch, f1_batch = compute_metrics(prediction, mask)
+                recall_epoch += recall_batch
+                precision_epoch += precision_batch
+                f1_epoch += f1_batch
 
-        print(f"Training E{epoch_ndx} finished.\n")
-        print(f'Training loss: {loss_epoch}')
-        self.metric_history['trn_loss'].append(loss_epoch)  # store loss in metric dict
+        with torch.no_grad():
+            # normalize by number of samples
+            loss_epoch /= len(trn_dl) * self.batch_size
+            recall_epoch /= len(trn_dl) * self.batch_size
+            precision_epoch /= len(trn_dl) * self.batch_size
+            f1_epoch /= len(trn_dl) * self.batch_size
+            # updates metrics dict
+            self.metrics_dict['loss_trn'].append(loss_epoch)
+            self.metrics_dict['recall_trn'].append(recall_epoch)
+            self.metrics_dict['precision_trn'].append(precision_epoch)
+            self.metrics_dict['f1_trn'].append(f1_epoch)
+            # log metrics
+            print(f"Finished: Loss: {round(loss_epoch, 3)}, Recall: {round(recall_epoch, 3)}, "
+                  f"Precision: {round(precision_epoch, 3)}, F1: {round(f1_epoch, 3)}\n")
 
     def validate(self, epoch_ndx, val_dl):
         """
@@ -125,18 +133,15 @@ class TrainingApp:
         :param val_dl:
         :return: validation metrics
         """
-
-        loss_epoch = 0
+        print(f"Validation E{epoch_ndx}")
         with torch.no_grad():
             self.model.eval()
-
-            print(f"Starting validation at epoch E{epoch_ndx} ----/{len(val_dl)}")
+            loss_epoch = 0
+            recall_epoch = 0
+            precision_epoch = 0
+            f1_epoch = 0
             for batch_ndx, batch_tup in enumerate(val_dl):
                 # different from training, here we don't keep the loss for validation
-
-                if (batch_ndx % (len(val_dl) // 10)) == 0 and batch_ndx != 0:
-                    print(f"E{epoch_ndx} {batch_ndx:-4}/{len(val_dl)}")
-
                 chunk, mask = batch_tup
                 chunk = chunk.to(self.device, non_blocking=True)
                 mask = mask.to(self.device, non_blocking=True)
@@ -145,12 +150,25 @@ class TrainingApp:
                 # compute loss
                 loss_batch = compute_loss(prediction, mask)
                 loss_epoch += loss_batch.item()
+                # compute batch metrics
+                recall_batch, precision_batch, f1_batch = compute_metrics(prediction, mask)
+                recall_epoch += recall_batch
+                precision_epoch += precision_batch
+                f1_epoch += f1_batch
 
-            loss_epoch /= len(val_dl) * self.batch_size  # normalize by number of samples
-
-        print(f"Validation E{epoch_ndx} finished.")
-        print(f'Validation loss: {loss_epoch}')
-        self.metric_history['val_loss'].append(loss_epoch)  # store loss in metric dict
+            # normalize by number of samples
+            loss_epoch /= len(val_dl) * self.batch_size
+            recall_epoch /= len(val_dl) * self.batch_size
+            precision_epoch /= len(val_dl) * self.batch_size
+            f1_epoch /= len(val_dl) * self.batch_size
+            # updates metrics dict
+            self.metrics_dict['loss_val'].append(loss_epoch)
+            self.metrics_dict['recall_val'].append(recall_epoch)
+            self.metrics_dict['precision_val'].append(precision_epoch)
+            self.metrics_dict['f1_val'].append(f1_epoch)
+            # log metrics
+            print(f"Finished: Loss: {round(loss_epoch, 3)}, Recall: {round(recall_epoch, 3)}, "
+                  f"Precision: {round(precision_epoch, 3)}, F1: {round(f1_epoch, 3)}\n")
 
     def save_model(self, epoch_ndx):
         """
@@ -167,10 +185,15 @@ class TrainingApp:
             'optimizer_state': self.optimizer.state_dict(),  # to resume training if run interrupted
             'optimizer_name': type(self.optimizer).__name__,
             'epoch': epoch_ndx,
+            'metrics': self.metrics_dict
         }
         torch.save(state, file_path)
 
         print(f"Saved model params to {file_path}")
+
+    def load_model(self, path):
+        state = torch.load(path)
+        self.model.load_state_dict(state['model_state'])
 
 
 def compute_loss(prediction, mask):
@@ -204,3 +227,19 @@ def dice_loss(prediction, label, epsilon=1):
     dice_ratio = (2 * dice_correct + epsilon) / (dice_prediction + dice_label + epsilon)
 
     return 1 - dice_ratio  # to make it a loss
+
+
+def compute_metrics(prediction, mask):
+    # true positives, false negatives, and false positives
+    tp = (prediction * mask).sum(dim=(1, 2, 3))
+    fn = ((1 - prediction) * mask).sum(dim=(1, 2, 3))
+    fp = (prediction * (1 - mask)).sum(dim=(1, 2, 3))
+    # metrics for batch
+    recall = tp / (tp + fn)
+    precision = tp / (tp + fp)
+    f1 = (2 * precision * recall) / (precision + recall)
+    # handle 0/0 cases (torch label them as nan, so we convert them to 0) and average over batch
+    recall = recall.nan_to_num().sum().item()
+    precision = precision.nan_to_num().sum().item()
+    f1 = f1.nan_to_num().sum().item()
+    return recall, precision, f1

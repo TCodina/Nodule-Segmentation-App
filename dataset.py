@@ -221,7 +221,6 @@ def get_ct_size_and_indices(series_uid):
 
 
 # Dataset
-# TODO: maybe try first using the same getitem for training and testing, what would be the problem with that?
 class NoduleSegmentationDataset(Dataset):
     def __init__(self,
                  series_list=None,  # series from which to make the dataset

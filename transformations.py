@@ -1,10 +1,6 @@
-import numpy as np
 import torch
-import random
-from torch import nn as nn
 import albumentations as A
 import cv2
-import math
 
 
 def to_tensor(sample):

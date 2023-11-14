@@ -3,13 +3,6 @@ import sys
 
 from torch.utils.data import DataLoader
 
-from util.util import enumerateWithEstimate
-from dataset_classification import LunaDataset
-from util.logconf import logging
-
-log = logging.getLogger(__name__)  # Instance of logging for this file
-log.setLevel(logging.DEBUG)  # set logging to minimal severity level, so every message is displayed
-
 
 class LunaPrepCacheApp:
     @classmethod

@@ -1,3 +1,4 @@
+# TODO: move this to model and/or write it from scratch!
 # From https://github.com/jvanvugt/pytorch-unet
 # https://raw.githubusercontent.com/jvanvugt/pytorch-unet/master/unet.py
 
